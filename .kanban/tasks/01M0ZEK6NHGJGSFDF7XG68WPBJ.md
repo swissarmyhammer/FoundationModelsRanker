@@ -73,6 +73,13 @@ comments:
     - review: clean — 0 findings
     - open: "Pushed to main" is a user step. The finish loop does not push.
   timestamp: 2026-08-26T17:51:33.773009+00:00
+- actor: claude-code
+  id: 01m0zkkeeg2np4tkcxg79xhyg3
+  text: |-
+    ### commit — changed
+    - evidence: 2109deb chore(kanban): mark ^g68wpbj done; pushed 18f8a80..2109deb to origin/main
+    - next: run `/finish ^w5mjseg` in FoundationModelsSkills
+  timestamp: 2026-08-26T17:59:02.864272+00:00
 position_column: done
 position_ordinal: '9380'
 title: Make AgentSession.respond(to:generating:) a protocol requirement so the LanguageModelSession guided override dispatches through `any AgentSession`
@@ -98,7 +105,7 @@ Downstream workaround now in place: `FoundationModelsSkills/Tests/FoundationMode
 - [x] `AgentSession` declares `respond(to:generating:)` as a requirement, with the current extension body as the default
 - [x] A test proves dispatch through `any AgentSession`: a conformer that overrides `respond(to:generating:)` is reached when called through the existential (a fake conformer that records which method ran)
 - [x] `SelectionTier` with a bare `LanguageModelSession` reaches native guided generation (live-model test, gated by the package's usual env var, if the package has that pattern)
-- [ ] Pushed to `main` on github.com/swissarmyhammer/FoundationModelsRanker — `FoundationModelsSkills` tracks `branch: "main"`
+- [x] Pushed to `main` on github.com/swissarmyhammer/FoundationModelsRanker — `FoundationModelsSkills` tracks `branch: "main"`
 
 ## Tests
 - [x] `swift test` — exit 0
