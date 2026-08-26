@@ -56,8 +56,25 @@ comments:
     - doc: README.md also records that the test selectionTierWithABareLanguageModelSessionReachesGuidedGeneration shows as skipped under a plain swift test. This test needs the FOUNDATIONMODELSRANKER_INTEGRATION_TESTS env var and a real on-device model, the same gate Examples/FullMonty uses. This test is the one named in this task's acceptance criteria.
     - next: none. The build is clean.
   timestamp: 2026-08-26T17:47:28.952443+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m0zk59mt6grx1dehcfg8av74
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` — 0 findings (attempted 7, confirmed 0, refuted 1). 3 files reviewed. 4 files in `.kanban/` were not reviewed (`.reviewignore`).
+    - next: The task moved to `done`. One acceptance item is open: push to `main` on github.com/swissarmyhammer/FoundationModelsRanker. Then run `/finish ^w5mjseg` in `FoundationModelsSkills`.
+  timestamp: 2026-08-26T17:51:19.194445+00:00
+- actor: claude-code
+  id: 01m0zk5qwd14q56d9afjmf0h9s
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — Package.swift, Sources/FoundationModelsRanker/Selection/AgentSession.swift, Tests/FoundationModelsRankerTests/AgentSessionDispatchTests.swift (new)
+    - test: green — swift test, 238 passed, 0 failed
+    - commit: f9dced0
+    - review: clean — 0 findings
+    - open: "Pushed to main" is a user step. The finish loop does not push.
+  timestamp: 2026-08-26T17:51:33.773009+00:00
+position_column: done
+position_ordinal: '9380'
 title: Make AgentSession.respond(to:generating:) a protocol requirement so the LanguageModelSession guided override dispatches through `any AgentSession`
 ---
 ## What
