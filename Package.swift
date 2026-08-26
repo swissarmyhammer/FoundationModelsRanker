@@ -29,6 +29,12 @@ let routerDependencyName = "FoundationModelsRouter"
 /// `#hubDownloader()` / `#huggingFaceTokenizerLoader()` macros to build a
 /// live `Router` for its gated real-model path (plan.md §3a) — the only
 /// place this package touches MLX directly.
+///
+/// The branch must stay equal to the one FoundationModelsRouter's own
+/// `Package.swift` names. Two different branch requirements on one package
+/// identity make SwiftPM refuse to resolve the graph at all. Router moved to
+/// its published `stable` branch on 2026-08-14, and
+/// FoundationModelsMetadataRegistry follows the same branch.
 let mlxPackage = "mlx-swift-lm"
 
 /// The Hugging Face Hub client package name.
@@ -90,7 +96,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "git@github.com:swissarmyhammer/\(routerDependencyName).git", branch: "main"),
-        .package(url: "git@github.com:swissarmyhammer/\(mlxPackage).git", branch: "foundationmodels-fixes"),
+        .package(url: "git@github.com:swissarmyhammer/\(mlxPackage).git", branch: "stable"),
         .package(url: "https://github.com/huggingface/\(huggingFacePackage)", from: "0.9.0"),
         .package(url: "https://github.com/huggingface/\(transformersPackage)", from: "1.3.0"),
         // Pinned below swift-jinja 2.4.0 for the same reason
@@ -116,6 +122,14 @@ let package = Package(
             dependencies: [
                 .target(name: packageName),
                 .target(name: "FullMontyCore"),
+                // `Jinja` is already linked transitively via `Tokenizers`
+                // (through `FullMontyCore`'s `liveRouterProductDependencies`);
+                // declaring it here marks the root-level swift-jinja pin (the
+                // `"2.0.0"..<"2.4.0"` upper bound above, which exists only to
+                // keep `swift package update` off the release that breaks
+                // swift-transformers) as used, so SwiftPM stops warning that
+                // the dependency is unused by any target.
+                .product(name: "Jinja", package: "swift-jinja"),
             ],
             path: "Tests/\(packageName)Tests"
         ),

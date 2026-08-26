@@ -1,0 +1,1 @@
+{"id":"01M0ZJEMQ0M90FGSYKA1C7Y7YP","timestamp":"2026-08-26T17:38:56.864141Z","op":"create","item_id":"01M0ZJEMPZQASM5349CANK1E3S","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: 1d76db\n+tag_name: bug\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: 1d76db\n-tag_name: bug\n","transaction_id":null}

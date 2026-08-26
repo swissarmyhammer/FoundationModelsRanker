@@ -49,6 +49,27 @@ public protocol AgentSession: Sendable {
     /// - Returns: the forked child session.
     /// - Throws: whatever the underlying session throws while forking.
     func fork() async throws -> any AgentSession
+
+    /// Sends `prompt` to the session and decodes its response as a
+    /// `Generable` type -- the seam a selection call uses to get
+    /// well-formed structured output back.
+    ///
+    /// A protocol requirement, not only an extension method, so a call
+    /// through `any AgentSession` reaches a conformer's own override.
+    /// `SelectionTier` holds every session as `any AgentSession`; an
+    /// extension method alone binds that call to the extension default and
+    /// a conformer with native guided generation (`LanguageModelSession`)
+    /// never gets to answer. The extension below supplies the default, so a
+    /// conformer that only returns plain text implements `respond(to:)`
+    /// and nothing more.
+    ///
+    /// - Parameters:
+    ///   - prompt: the prompt to respond to.
+    ///   - type: the `Generable` type to decode the response into.
+    /// - Returns: the decoded value.
+    /// - Throws: whatever the underlying session throws, or a decoding
+    ///   error if the response isn't valid, schema-conforming JSON for `T`.
+    func respond<T: Generable>(to prompt: String, generating type: T.Type) async throws -> T
 }
 
 extension AgentSession {
@@ -62,9 +83,8 @@ extension AgentSession {
     /// conformance.
     public func fork() async throws -> any AgentSession { self }
 
-    /// Sends `prompt` to the session and decodes its response as a
-    /// `Generable` type -- the seam a selection call uses to get
-    /// well-formed structured output back.
+    /// Default `respond(to:generating:)`: decodes `respond(to:)`'s plain text
+    /// as JSON for `T`.
     ///
     /// FoundationModelsRouter's own typed guided shape
     /// (`RoutedLLM.respond<T: Generable>(to:generating:)`) lives on the
