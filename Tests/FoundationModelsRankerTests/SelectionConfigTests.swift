@@ -51,6 +51,44 @@ struct SelectionConfigTests {
         #expect(config.candidateLimit == 7)
     }
 
+    // MARK: - Session source
+
+    @Test
+    func theModelInitializerWrapsItsFactoryInTheFactorySource() {
+        let config = SelectionConfig(model: { _ in ScriptedAgentSession() })
+
+        guard case .factory(let makeSession) = config.sessionSource else {
+            Issue.record("the model: initializer must store a `.factory` source")
+            return
+        }
+        #expect(makeSession("instructions") is ScriptedAgentSession)
+    }
+
+    @Test
+    func theSessionInitializerStoresTheSuppliedSession() {
+        let session = ScriptedAgentSession()
+
+        let config = SelectionConfig(session: session)
+
+        guard case .session(let storedSession) = config.sessionSource else {
+            Issue.record("the session: initializer must store a `.session` source")
+            return
+        }
+        #expect((storedSession as? ScriptedAgentSession) === session)
+    }
+
+    @Test
+    func theSessionInitializerClampsNegativeLimitsToZero() {
+        let config = SelectionConfig(
+            session: ScriptedAgentSession(),
+            capacityCharacterLimit: -1,
+            candidateLimit: -5
+        )
+
+        #expect(config.capacityCharacterLimit == 0)
+        #expect(config.candidateLimit == 0)
+    }
+
     // MARK: - `.selectionDefault` neutral wording
 
     @Test

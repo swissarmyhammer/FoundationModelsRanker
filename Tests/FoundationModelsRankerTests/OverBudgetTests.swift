@@ -133,6 +133,56 @@ struct OverBudgetTests {
         #expect(!instructions.contains("charlie"))
     }
 
+    // MARK: - Session source: one supplied session vs a session factory
+
+    @Test
+    func overBudgetSuppliedSessionIsPromptedWithTheTopMCandidatesOnly() async throws {
+        let session = ScriptedAgentSession([#"{"ids":["alpha"]}"#])
+        let config = SelectionConfig(
+            session: session,
+            capacityCharacterLimit: Self.forcedOverBudgetLimit,
+            candidateLimit: 2
+        )
+        let tier = SelectionTier(
+            catalog: Self.catalog,
+            config: config,
+            onDiagnostic: { _ in },
+            retrievalRanking: Self.rankEntireCatalog
+        )
+
+        _ = try await tier.search(intent: "alpha", limit: 5)
+
+        // The prompt carries this round's candidate blocks and no other, so
+        // a supplied session sees the same cut a seeded session sees.
+        let prompt = try #require(session.receivedPrompts.first)
+        #expect(prompt.contains("SUMMARY_alpha"))
+        #expect(prompt.contains("SUMMARY_bravo"))
+        #expect(!prompt.contains("SUMMARY_charlie"))
+        #expect(!prompt.contains("SUMMARY_delta"))
+        #expect(!prompt.contains("SUMMARY_echo"))
+        #expect(prompt.hasSuffix("# Task\n\nalpha"))
+    }
+
+    @Test
+    func overBudgetFactorySessionIsPromptedWithTheIntentAlone() async throws {
+        let session = ScriptedAgentSession([#"{"ids":["alpha"]}"#])
+        let config = SelectionConfig(
+            model: { _ in session },
+            capacityCharacterLimit: Self.forcedOverBudgetLimit,
+            candidateLimit: 2
+        )
+        let tier = SelectionTier(
+            catalog: Self.catalog,
+            config: config,
+            onDiagnostic: { _ in },
+            retrievalRanking: Self.rankEntireCatalog
+        )
+
+        _ = try await tier.search(intent: "alpha", limit: 5)
+
+        #expect(session.receivedPrompts == ["alpha"])
+    }
+
     // MARK: - One-off session: no caching, no fork
 
     @Test

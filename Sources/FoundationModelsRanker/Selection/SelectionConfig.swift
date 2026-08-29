@@ -6,10 +6,29 @@
 // "API librarian"/"functions" domain language, since FoundationModelsRanker's catalog is
 // never assumed to be an API surface.
 //
-// `model` takes only the instructions text. A caller that wants guided
-// generation applies its own grammar when it makes the session. A session's
-// grammar is set at creation, and a `fork()` of that session inherits it.
-// `SelectionTier.idEnumSchema(ids:)` gives such a caller the id set.
+// A session factory takes only the instructions text. A caller that wants
+// guided generation applies its own grammar when it makes the session. A
+// session's grammar is set at creation, and a `fork()` of that session
+// inherits it. `SelectionTier.idEnumSchema(ids:)` gives such a caller the id
+// set.
+
+/// Where a selection tier gets the session it asks the model through.
+///
+/// Two kinds of caller need two different seams. A caller that can make a
+/// session for each prefix gives a factory, and the tier seeds each session
+/// with the assembled candidate prefix as its instructions. A caller that
+/// already holds one live session gives that session instead: a live session
+/// takes no new instructions, so a factory that ignores the prefix would
+/// throw the catalog away and the model would never see it.
+public enum SelectionSessionSource: Sendable {
+    /// Makes a new session for each assembled prefix. The prefix becomes the
+    /// session's instructions, so the prompt is the intent alone.
+    case factory(@Sendable (String) -> any AgentSession)
+
+    /// Reuses one supplied session. The tier forks the session for each
+    /// call, and the prefix rides above the intent on each prompt.
+    case session(any AgentSession)
+}
 
 /// Configuration for a selection tier: how selection sessions are created,
 /// what guidance seeds the assembled prefix, and the capacity/candidate
@@ -30,16 +49,16 @@ public struct SelectionConfig: Sendable {
     /// seeds its one-off session with.
     public static let defaultCandidateLimit = 24
 
-    /// Creates a session seeded with the given instructions text -- the seam
-    /// a selection tier drives both the cached root session and the
-    /// over-budget one-off session through. `@Sendable` so it can cross a
-    /// selection tier's actor isolation boundary.
+    /// Where this tier's sessions come from -- the seam a selection tier
+    /// drives both the cached root session and the over-budget one-off
+    /// session through. `Sendable` so it can cross a selection tier's actor
+    /// isolation boundary.
     ///
-    /// A caller that wants guided generation applies its own grammar inside
-    /// this closure, because a session's grammar is set at creation and a
-    /// `fork()` of that session inherits it.
+    /// A caller that wants guided generation applies its own grammar when it
+    /// makes the session, because a session's grammar is set at creation and
+    /// a `fork()` of that session inherits it.
     /// `SelectionTier.idEnumSchema(ids:)` gives such a caller the id set.
-    public var model: @Sendable (String) -> any AgentSession
+    public var sessionSource: SelectionSessionSource
 
     /// The selection guidance prepended to every assembled prefix. Defaults
     /// to `.selectionDefault`.
@@ -54,7 +73,8 @@ public struct SelectionConfig: Sendable {
     /// one-off session. Negative values are clamped to `0`.
     public var candidateLimit: Int
 
-    /// Creates a selection tier configuration.
+    /// Creates a selection tier configuration that makes a session for each
+    /// assembled prefix -- a `.factory` session source.
     ///
     /// - Parameters:
     ///   - model: creates a session seeded with the given instructions
@@ -71,7 +91,59 @@ public struct SelectionConfig: Sendable {
         capacityCharacterLimit: Int = SelectionConfig.defaultCapacityCharacterLimit,
         candidateLimit: Int = SelectionConfig.defaultCandidateLimit
     ) {
-        self.model = model
+        self.init(
+            sessionSource: .factory(model),
+            preamble: preamble,
+            capacityCharacterLimit: capacityCharacterLimit,
+            candidateLimit: candidateLimit
+        )
+    }
+
+    /// Creates a selection tier configuration that reuses one live session --
+    /// a `.session` session source.
+    ///
+    /// A live session takes no new instructions, so the tier forks this
+    /// session for each call and puts the assembled prefix in the prompt.
+    ///
+    /// - Parameters:
+    ///   - session: the session every selection call forks a child from.
+    ///   - preamble: the selection guidance prepended to every assembled
+    ///     prefix. Defaults to `.selectionDefault`.
+    ///   - capacityCharacterLimit: the assembled prefix's character
+    ///     budget. Defaults to `defaultCapacityCharacterLimit`.
+    ///   - candidateLimit: the over-budget top-M candidate count. Defaults
+    ///     to `defaultCandidateLimit`.
+    public init(
+        session: any AgentSession,
+        preamble: String = .selectionDefault,
+        capacityCharacterLimit: Int = SelectionConfig.defaultCapacityCharacterLimit,
+        candidateLimit: Int = SelectionConfig.defaultCandidateLimit
+    ) {
+        self.init(
+            sessionSource: .session(session),
+            preamble: preamble,
+            capacityCharacterLimit: capacityCharacterLimit,
+            candidateLimit: candidateLimit
+        )
+    }
+
+    /// Creates a selection tier configuration from an already-chosen session
+    /// source -- the one place the budgets are clamped, so both public
+    /// initializers above clamp identically.
+    ///
+    /// - Parameters:
+    ///   - sessionSource: where this tier's sessions come from.
+    ///   - preamble: the selection guidance prepended to every assembled
+    ///     prefix.
+    ///   - capacityCharacterLimit: the assembled prefix's character budget.
+    ///   - candidateLimit: the over-budget top-M candidate count.
+    private init(
+        sessionSource: SelectionSessionSource,
+        preamble: String,
+        capacityCharacterLimit: Int,
+        candidateLimit: Int
+    ) {
+        self.sessionSource = sessionSource
         self.preamble = preamble
         self.capacityCharacterLimit = max(0, capacityCharacterLimit)
         self.candidateLimit = max(0, candidateLimit)

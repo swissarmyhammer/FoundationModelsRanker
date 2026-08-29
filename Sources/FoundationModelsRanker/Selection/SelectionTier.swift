@@ -31,8 +31,8 @@ import Foundation
 /// whole catalog stays selectable, so no `.retrievalCut` is reported.
 ///
 /// **Over budget**: `retrievalRanking` ranks the whole catalog for the
-/// intent, and the top `config.candidateLimit` candidates (best-first) seed
-/// a **fresh, uncached, unforked one-off session** — there is no stable
+/// intent, and the top `config.candidateLimit` candidates (best-first) go to
+/// a **fresh, uncached one-off session** — there is no stable
 /// prefix to reuse, since the candidate set differs per intent. The cut is
 /// reported via `RankDiagnostic.retrievalCut(considered:kept:)` (the
 /// `onPrefilterCut` pattern, generalized to ranked retrieval). Returned
@@ -41,6 +41,13 @@ import Foundation
 /// even a legitimate id from elsewhere in the wider catalog — is filtered
 /// and reported via `.unknownSelectedId`, exactly like an id absent from
 /// the catalog altogether.
+///
+/// **Where the prefix goes** follows `SelectionConfig.sessionSource`. A
+/// `.factory` source seeds the prefix as each session's instructions, so the
+/// prompt is the intent alone. A `.session` source hands over one live
+/// session, which takes no new instructions: the tier forks that session for
+/// each call and carries the prefix in the prompt instead
+/// (`prompt(prefix:intent:)`). Either way the model sees the same prefix.
 ///
 /// **IDs only** (plan.md §6, decision #4): the guided output is
 /// `Selection { ids: [String] }`. The assembled prefix shows every candidate
@@ -57,7 +64,7 @@ public actor SelectionTier {
     /// over.
     private let catalog: any SelectionCatalog
 
-    /// This tier's session factory, preamble, and capacity/candidate budgets.
+    /// This tier's session source, preamble, and capacity/candidate budgets.
     private let config: SelectionConfig
 
     /// `assemblePrefix(preamble:catalog:)`, precomputed once at `init` since
@@ -83,11 +90,11 @@ public actor SelectionTier {
     private var rootSession: (any AgentSession)?
 
     /// Creates a selection tier over `catalog`, using `config`'s session
-    /// factory, preamble, and budgets.
+    /// source, preamble, and budgets.
     ///
     /// - Parameters:
     ///   - catalog: the catalog to answer `search(intent:limit:)` calls over.
-    ///   - config: this tier's session factory, preamble, and budgets.
+    ///   - config: this tier's session source, preamble, and budgets.
     ///   - onDiagnostic: called for every diagnostic this tier emits.
     ///   - retrievalRanking: ranks the whole catalog for one intent,
     ///     best-first — the over-budget path's source of top-M candidates,
@@ -117,9 +124,9 @@ public actor SelectionTier {
     /// `.retrievalCut` is reported. That enrichment costs one
     /// `retrievalRanking` pass per call, which includes one query-embedding
     /// call when the consumer's ranking uses an embedder. Over budget: ranks
-    /// the whole catalog and seeds a one-off session with the top-M
+    /// the whole catalog and gives a one-off session the top-M
     /// candidates (`overBudgetSearch(intent:limit:)`, plan.md §6) — no
-    /// caching, no fork.
+    /// caching, and no cached root to fork.
     ///
     /// - Parameters:
     ///   - intent: the plain-language search intent.
@@ -138,7 +145,10 @@ public actor SelectionTier {
         }
 
         let child = try await cachedRootSession().fork()
-        let selection = try await child.respond(to: intent, generating: Selection.self)
+        let selection = try await child.respond(
+            to: prompt(prefix: assembledPrefix, intent: intent),
+            generating: Selection.self
+        )
         // Ranked after the model call, so a throwing session never pays the
         // retrieval (and query-embedding) cost -- the full ordering resolves
         // every catalog id, including the zero-scored tail, to its real
@@ -154,14 +164,52 @@ public actor SelectionTier {
     /// Returns this tier's cached root session, creating and caching it on
     /// first use.
     ///
-    /// - Returns: the cached root session, seeded with the full assembled
-    ///   prefix -- every catalog id is a legal selection under budget, since
-    ///   the assembled prefix already summarizes the whole catalog.
+    /// A `.factory` source makes the root from the full assembled prefix, so
+    /// the prefix is the root's instructions. A `.session` source is the
+    /// root as it stands: a live session takes no new instructions, so
+    /// `prompt(prefix:intent:)` carries the prefix instead. Either root is
+    /// forked once per call by `search(intent:limit:)`.
+    ///
+    /// - Returns: the cached root session -- every catalog id is a legal
+    ///   selection under budget, since the assembled prefix already
+    ///   summarizes the whole catalog.
     private func cachedRootSession() -> any AgentSession {
         if let rootSession { return rootSession }
-        let session = config.model(assembledPrefix)
+        let session: any AgentSession
+        switch config.sessionSource {
+        case .factory(let makeSession):
+            session = makeSession(assembledPrefix)
+        case .session(let suppliedSession):
+            session = suppliedSession
+        }
         rootSession = session
         return session
+    }
+
+    /// Assembles the prompt for one `search(intent:limit:)` call.
+    ///
+    /// Both the cached-root path and the over-budget path prompt through
+    /// this one function, so the two cannot drift apart.
+    ///
+    /// A `.factory` source already seeded `prefix` as the session's
+    /// instructions, so the prompt is the intent alone -- unchanged from
+    /// before this seam existed. A `.session` source cannot take new
+    /// instructions, so the prompt carries the whole prefix above a
+    /// `# Task` heading; without it the model never sees the catalog and
+    /// can return no id at all.
+    ///
+    /// - Parameters:
+    ///   - prefix: this call's assembled candidate prefix -- the whole
+    ///     catalog under budget, this round's top-M candidates over budget.
+    ///   - intent: the plain-language search intent.
+    /// - Returns: the prompt text to send.
+    private func prompt(prefix: String, intent: String) -> String {
+        switch config.sessionSource {
+        case .factory:
+            return intent
+        case .session:
+            return "\(prefix)\n\n# Task\n\n\(intent)"
+        }
     }
 
     // MARK: - Over budget: retrieval top-M + one-off session
@@ -172,10 +220,12 @@ public actor SelectionTier {
     /// always `min(config.candidateLimit, considered)` of them, even when
     /// few or none score positively, so the model always has a full
     /// candidate set to pick from), reports the cut via
-    /// `.retrievalCut(considered:kept:)`, and seeds a **fresh, uncached,
-    /// unforked** one-off session with exactly those candidates' ids and
+    /// `.retrievalCut(considered:kept:)`, and answers on a **fresh,
+    /// uncached** one-off session carrying exactly those candidates' ids and
     /// `summaryBlock(forID:)`s — there is no stable prefix here to reuse,
-    /// since the candidate set differs per intent.
+    /// since the candidate set differs per intent. A `.factory` source makes
+    /// that session and never forks it; a `.session` source forks the
+    /// supplied session, because a live session takes no new instructions.
     ///
     /// - Parameters:
     ///   - intent: the plain-language search intent.
@@ -196,8 +246,19 @@ public actor SelectionTier {
 
         let candidateIDs = candidates.map(\.id)
         let prefix = Self.assemblePrefix(preamble: config.preamble, ids: candidateIDs, catalog: catalog)
-        let session = config.model(prefix)
-        let selection = try await session.respond(to: intent, generating: Selection.self)
+        // There is no cached root here, so a `.session` source forks the
+        // supplied session for this one call.
+        let session: any AgentSession
+        switch config.sessionSource {
+        case .factory(let makeSession):
+            session = makeSession(prefix)
+        case .session(let suppliedSession):
+            session = try await suppliedSession.fork()
+        }
+        let selection = try await session.respond(
+            to: prompt(prefix: prefix, intent: intent),
+            generating: Selection.self
+        )
         return matches(
             forIDs: selection.ids,
             limit: limit,

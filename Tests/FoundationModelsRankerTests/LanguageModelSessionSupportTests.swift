@@ -7,7 +7,7 @@ import Testing
 /// conformance (plan.md §3a, §6 phase 3): compile-level proofs that any
 /// FoundationModels model constructs a valid `AgentSession` factory. Both
 /// seams now take the same shape, `@Sendable (String) -> any AgentSession`
-/// -- `SelectionConfig.model` and the `Searcher` facade's `session:` -- so
+/// -- `SelectionConfig.init(model:)` and the `Searcher` facade's `session:` -- so
 /// one test reads the bare closure type and the other reads the closure
 /// through a `SelectionConfig`. A fork-semantics test stands beside them.
 /// Every test here runs without live inference (construction and `fork()`
@@ -35,7 +35,8 @@ struct LanguageModelSessionSupportTests {
 
     @Test
     func languageModelSessionFactoryClosureTypeChecksAsASelectionConfigModelFactory() {
-        // `SelectionConfig.model` takes only the instructions text. A plain
+        // `SelectionConfig.init(model:)` takes only the instructions text and
+        // stores it as a `.factory` session source. A plain
         // `LanguageModelSession` factory applies no grammar of its own: it
         // relies on the session's native guided generation through
         // `respond(to:generating:)` instead.
@@ -43,7 +44,11 @@ struct LanguageModelSessionSupportTests {
             LanguageModelSession(model: SystemLanguageModel.default, instructions: instructions)
         })
 
-        let session = config.model("selection guidance")
+        guard case .factory(let makeSession) = config.sessionSource else {
+            Issue.record("the model: initializer must store a `.factory` source")
+            return
+        }
+        let session = makeSession("selection guidance")
 
         #expect(session is LanguageModelSession)
     }

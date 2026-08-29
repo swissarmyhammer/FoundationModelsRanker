@@ -58,10 +58,34 @@ comments:
     - noted, not fixed (out of scope, belongs to card `^2q0p8gr`): `Tests/FoundationModelsRankerTests/Support/ScriptedAgentSession.swift` still has an unused `import FoundationModelsRouter`
     - next: proceed to review
   timestamp: 2026-08-29T16:27:18.533885+00:00
+- actor: claude-code
+  id: 01m175zz6a6ry9wjw8xghcnagr
+  text: |
+    ### review — clean
+    - scope: `review sha HEAD~1..HEAD` (commit `00da13c`), task-mode
+    - evidence: zero new findings. counts: findings 0, confirmed 0, refuted 0, attempted 7, failed 0. 5 files reviewed; 6 `.kanban/` files excluded by `.reviewignore`.
+    - verified: all three schema rules survive the return-type change. `itemsSchema["enum"] = ids`, `idsSchema["uniqueItems"] = true`, and `idsSchema["maxItems"] = ids.count` are all still emitted in `Sources/FoundationModelsRanker/Selection/SelectionTier.swift`. The comment that explains the ~6150-token runaway is intact word for word. The diff removes only the `.jsonSchema(...)` wrap from the return.
+    - verified: the public doc tells a caller with a grammar-capable backend how to wrap the result -- "A Router caller makes a grammar from the text: `Grammar.jsonSchema(SelectionTier.idEnumSchema(ids: ids))`".
+    - verified: all four schema tests in `Tests/FoundationModelsRankerTests/SelectionTests.swift` use `SelectionSchemaTestSupport`. `idEnumSchemaContainsExactlyTheCatalogsCurrentIds` and `idEnumSchemaReflectsAnEmptyCatalogAsAnEmptyEnum` use `enumIds(in:)`. `idEnumSchemaMarksIdsAsUniqueItems` and `idEnumSchemaBoundsIdsWithMaxItemsAtTheCandidateCount` use `idsSchema(in:)`. No test stopped asserting what it asserted before the rename: the id-set test keeps `== Set(Self.catalog.ids)`, the empty-catalog test keeps the empty check, the `uniqueItems` test keeps `== true`, and the `maxItems` test keeps `== Self.catalog.ids.count` with its explanatory comment. The fifth test, `idEnumSchemaIsWellFormedJson`, parses the text itself, which is correct, because the helper would pass through the parse step it must assert on.
+    - noted, not a finding: three tool rules declined `Tests/FoundationModelsRankerTests/Support/GrammarTestSupport.swift`, because the rename deleted that path. This is the expected result of a `git mv` in a diff scope. The new file `Support/SelectionSchemaTestSupport.swift` was reviewed.
+    - next: task moved to `done`
+  timestamp: 2026-08-29T16:35:08.618396+00:00
+- actor: claude-code
+  id: 01m1760z71xt846rhe3fqdx5jc
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 5 files; idEnumSchema(ids:) returns String, GrammarTestSupport renamed to SelectionSchemaTestSupport with a split walk, 1 new JSON parse test
+    - test: green — swift test, 255 passed, 0 failed, 0 warnings; both FullMonty paths exit 0
+    - commit: 00da13c — 11 files changed, 230 insertions, 122 deletions
+    - review: clean — zero findings; every schema rule survives, including the load-bearing maxItems cap and its comment
+    - next: none — task is in done
+
+    Milestone: `grep -rn "FoundationModelsRouter" Sources/` now finds nothing. The library target no longer references FoundationModelsRouter at all.
+  timestamp: 2026-08-29T16:35:41.409532+00:00
 depends_on:
 - 01M16WTDBSFXJKRSDK44KX83SX
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '9980'
 title: Change idEnumGrammar to idEnumSchema and return a JSON Schema String
 ---
 ## What

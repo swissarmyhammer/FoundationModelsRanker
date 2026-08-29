@@ -150,7 +150,7 @@ final class RootSessionRespondCalledDirectlySession: AgentSession, Sendable {
     }
 }
 
-/// Records every `instructions` string a `SelectionConfig.model` factory
+/// Records every `instructions` string a `SelectionSessionSource.factory`
 /// closure was called with, returning one freshly-scripted
 /// `ScriptedAgentSession` (canned with `responses`) per call — lets a test
 /// assert on *how many times* a session was created (proving the root

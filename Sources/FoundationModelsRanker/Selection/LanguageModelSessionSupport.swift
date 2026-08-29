@@ -7,8 +7,9 @@
 // preset -- plugs into `AgentSession` with no external dependency, so a
 // `LanguageModelSession(model:instructions:)` call type-checks anywhere an
 // `AgentSession` is expected. Both seams take the same shape,
-// `@Sendable (String) -> any AgentSession` -- `SelectionConfig.model` and the
-// `Searcher` facade's `session:` -- so one closure serves both, e.g.
+// `@Sendable (String) -> any AgentSession` -- `SelectionConfig`'s
+// `init(model:...)` (a `.factory` session source) and the `Searcher` facade's
+// `session:` -- so one closure serves both, e.g.
 // `{ instructions in LanguageModelSession(model: .default, instructions:
 // instructions) }`. Such a factory applies no grammar of its own: it relies
 // on the session's own native guided generation, through

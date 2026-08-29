@@ -107,6 +107,75 @@ struct SelectionTests {
         #expect(second.map(\.id) == ["rollback"])
     }
 
+    // MARK: - Session source: one supplied session vs a session factory
+
+    @Test
+    func aSuppliedSessionIsPromptedWithThePrefixAboveTheIntent() async throws {
+        // A live session takes no new instructions, so the assembled prefix
+        // can only reach the model in the prompt. Without it the model never
+        // sees the catalog and can return no id at all.
+        let session = ScriptedAgentSession([#"{"ids":["deploy"]}"#])
+        let config = SelectionConfig(session: session)
+        let tier = SelectionTier(
+            catalog: Self.catalog,
+            config: config,
+            onDiagnostic: { _ in },
+            retrievalRanking: Self.rankEntireCatalog
+        )
+
+        _ = try await tier.search(intent: "roll back the last deploy", limit: 5)
+
+        let prompt = try #require(session.receivedPrompts.first)
+        #expect(prompt.contains(String.selectionDefault))
+        for id in Self.catalog.ids {
+            #expect(prompt.contains("## \(id)"))
+        }
+        #expect(prompt.hasSuffix("# Task\n\nroll back the last deploy"))
+    }
+
+    @Test
+    func aSuppliedSessionIsForkedOncePerSearchAndNeverRebuilt() async throws {
+        let session = ScriptedAgentSession([
+            #"{"ids":["deploy"]}"#,
+            #"{"ids":["rollback"]}"#,
+        ])
+        let config = SelectionConfig(session: session)
+        let tier = SelectionTier(
+            catalog: Self.catalog,
+            config: config,
+            onDiagnostic: { _ in },
+            retrievalRanking: Self.rankEntireCatalog
+        )
+
+        let first = try await tier.search(intent: "first task", limit: 5)
+        let second = try await tier.search(intent: "second task", limit: 5)
+
+        #expect(session.forkCount == 2)
+        // Both calls answered on the supplied session itself -- the tier
+        // never makes a session of its own from a supplied one.
+        #expect(session.callCount == 2)
+        #expect(first.map(\.id) == ["deploy"])
+        #expect(second.map(\.id) == ["rollback"])
+    }
+
+    @Test
+    func aFactorySessionIsPromptedWithTheIntentAlone() async throws {
+        // The factory path seeds the prefix as the session's instructions,
+        // so the prompt stays the intent alone, exactly as before.
+        let session = ScriptedAgentSession([#"{"ids":["deploy"]}"#])
+        let config = SelectionConfig(model: { _ in session })
+        let tier = SelectionTier(
+            catalog: Self.catalog,
+            config: config,
+            onDiagnostic: { _ in },
+            retrievalRanking: Self.rankEntireCatalog
+        )
+
+        _ = try await tier.search(intent: "roll back the last deploy", limit: 5)
+
+        #expect(session.receivedPrompts == ["roll back the last deploy"])
+    }
+
     // MARK: - Summary vs full block separation
 
     @Test

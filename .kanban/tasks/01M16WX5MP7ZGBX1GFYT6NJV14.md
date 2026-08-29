@@ -1,10 +1,33 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m176dw8qrf9t9zgvgtrwj1yg
+  text: |-
+    Research done. What the code shows now (the card sketch is older than the last seven commits):
+
+    - `SelectionConfig.model` is already `@Sendable (String) -> any AgentSession` (instructions text only, no grammar argument). Only the property name changes; the closure shape does not.
+    - Readers of `config.model`: `SelectionTier.cachedRootSession()` and `SelectionTier.overBudgetSearch(intent:limit:)`, plus one test, `LanguageModelSessionSupportTests.languageModelSessionFactoryClosureTypeChecksAsASelectionConfigModelFactory`, which calls `config.model("selection guidance")` directly. That test must read through `sessionSource` after the change.
+    - Callers of the `init(model:...)` form: `Searcher.init` and many tests. The signature stays, so none of them change.
+    - `SelectionTier.assemblePrefix` renders each candidate as `## <id>` above its `summaryBlock(forID:)`, so the `.session` prompt carries the ids.
+
+    Design chosen for `.session`, and why:
+    - `cachedRootSession()` returns the supplied session AS IT IS (no fork). `search(intent:limit:)` already forks the root once per call, so the session the model answers on is `try await supplied.fork()` -- exactly what the card asks -- and `fork()` is called exactly once per `search` call. Forking inside `cachedRootSession()` too would make it 1 + N forks per N searches, which breaks the "once per search" requirement.
+    - `overBudgetSearch(intent:limit:)` has no cached root, so it forks the supplied session directly.
+    - One `private func prompt(prefix:intent:)` gives both paths their prompt.
+  timestamp: 2026-08-29T16:42:44.375520+00:00
+- actor: claude-code
+  id: 01m178f5bw61vxhmvnbndrbxww
+  text: |-
+    ### test — green
+    - evidence: `swift build` clean (only the documented mlx-swift Cmlx.bundle warning). `swift test` — 263 tests in 21 suites passed, 0 failed. Only skip is the documented `selectionTierWithABareLanguageModelSessionReachesGuidedGeneration` (gated test). All 8 required tests found and passing: `theSessionInitializerStoresTheSuppliedSession`, `theModelInitializerWrapsItsFactoryInTheFactorySource`, `theSessionInitializerClampsNegativeLimitsToZero`, `aFactorySessionIsPromptedWithTheIntentAlone`, `aSuppliedSessionIsPromptedWithThePrefixAboveTheIntent`, `aSuppliedSessionIsForkedOncePerSearchAndNeverRebuilt`, `overBudgetFactorySessionIsPromptedWithTheIntentAlone`, `overBudgetSuppliedSessionIsPromptedWithTheTopMCandidatesOnly`. Checked touched files (`SelectionConfig.swift`, `SelectionTier.swift`, `LanguageModelSessionSupport.swift`, `ScriptedAgentSession.swift`) for stray TODO/FIXME markers and dangling symbol references — none found. `swift run FullMonty --no-model` exit 0. `swift run FullMonty --embedder` exit 0 — both logs show only the documented mlx warning.
+    - next: ready for review.
+  timestamp: 2026-08-29T17:18:23.612077+00:00
 depends_on:
 - 01M16WTDBSFXJKRSDK44KX83SX
-position_column: todo
-position_ordinal: '8680'
+position_column: doing
+position_ordinal: '80'
 title: Let a caller supply one AgentSession instead of a session factory
 ---
 ## What
