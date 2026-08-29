@@ -144,10 +144,46 @@ comments:
     - evidence: 1 file — `Examples/FullMontyCore/Demo.swift`. Added the file-private helper `runRetrievalDemo(embedder:onDiagnostic:)`; `runNoModelDemo` and `runEmbedderDemo` now forward to it. `swift build` exit 0; `swift test` 252 tests in 21 suites passed, 0 failures; both `FullMonty` GPU-free paths exit 0 with the same output as before.
     - next: `/review`
   timestamp: 2026-08-29T15:15:29.190772+00:00
+- actor: claude-code
+  id: 01m171k68kzjywbksxa32jfpj6
+  text: |-
+    ### commit — changed
+    - evidence: d8bdc99 refactor(demo): remove duplicate code from the GPU-free demo paths, 3 files changed
+    - next: none
+  timestamp: 2026-08-29T15:18:15.571452+00:00
+- actor: claude-code
+  id: 01m171s94bw9vm1xq8vcas2bzc
+  text: |
+    ### review — clean
+
+    - scope: `review sha HEAD~1..HEAD` (commit `d8bdc99`). The engine read the changed lines only.
+    - counts: 0 findings, 0 confirmed, 0 refuted. 7 validators ran, 0 failed. 1 file reviewed. 2 files not reviewed, because an ignore rule excludes `.kanban/`.
+    - evidence: zero new findings.
+
+    Directed check 1 — the finding of the last review is correct now.
+
+    `Examples/FullMontyCore/Demo.swift` has the new file-private function `runRetrievalDemo(embedder:onDiagnostic:)`. That function holds the one shape that the two GPU-free paths share: `session: nil` and `mode: .retrieval`. `runNoModelDemo` calls it with `nil`. `runEmbedderDemo` calls it with `DemoEmbedder()`. Each public function is one line that calls the helper. No second copy of that shape is in the file. The checklist item of the finding of 2026-08-29 10:01 is checked.
+
+    Directed check 2 — the statement about `runDefaultDemo` is correct.
+
+    `runDefaultDemo` calls `runFullMontyDemo` with `embedder: nil`, `session: Searcher.defaultSessionFactory` and `mode: .auto`. Two arguments are different from the shape of the helper, not one. A helper with a parameter for the embedder, a parameter for the session and a parameter for the mode would have the same parameters as `runFullMontyDemo`, and it would send each one through with no change. It would only be a second name for that function. So the cause of the duplication does not continue in `runDefaultDemo`. The body that all three paths share is already in `runFullMontyDemo`.
+
+    - next: none. The card moves to the Done column.
+  timestamp: 2026-08-29T15:21:35.115+00:00
+- actor: claude-code
+  id: 01m171svbv8zjz6ne9msbgmgwx
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — Examples/FullMontyCore/Demo.swift; added private runRetrievalDemo(embedder:onDiagnostic:), routed both GPU-free paths through it
+    - test: green — swift test, 252 passed, 0 failed; both FullMonty paths exit 0; cosines unchanged after the refactor
+    - commit: d8bdc99 — 3 files changed
+    - review: clean — the prior duplication finding is resolved, and the runDefaultDemo carve-out was judged sound
+    - next: none — task is in done
+  timestamp: 2026-08-29T15:21:53.787958+00:00
 depends_on:
 - 01M16WVSKBESEYHA6H320D9ZDP
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '9680'
 title: Add a GPU-free demo embedder so the example still shows the cosine signal
 ---
 ## What

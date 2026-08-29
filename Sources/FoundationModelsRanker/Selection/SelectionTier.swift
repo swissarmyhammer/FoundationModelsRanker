@@ -15,7 +15,8 @@ import FoundationModelsRouter
 /// (`../FoundationModelsMultitool/Sources/.../Librarian.swift`), over any
 /// narrow `SelectionCatalog` conformer instead of a bespoke index type.
 ///
-/// Assembles a prefix from `SelectionConfig.preamble` + every catalog id's
+/// Assembles a prefix from `SelectionConfig.preamble` + every catalog id
+/// rendered as a markdown heading above that id's
 /// **`summaryBlock(forID:)`** (plan.md §4: the summary seeds the selection
 /// prefix; retrieval indexes the full `block(forID:)` instead) once at
 /// `init`, since the catalog never changes for this tier's lifetime — a
@@ -179,7 +180,7 @@ public actor SelectionTier {
     /// few or none score positively, so the model always has a full
     /// candidate set to pick from), reports the cut via
     /// `.retrievalCut(considered:kept:)`, and seeds a **fresh, uncached,
-    /// unforked** one-off session with exactly those candidates'
+    /// unforked** one-off session with exactly those candidates' ids and
     /// `summaryBlock(forID:)`s — there is no stable prefix here to reuse,
     /// since the candidate set differs per intent.
     ///
@@ -279,10 +280,11 @@ public actor SelectionTier {
     // MARK: - Prefix assembly
 
     /// Assembles this tier's instruction prefix (plan.md §6): `preamble`
-    /// followed by a `# Candidates` header and every catalog id's
-    /// **`summaryBlock(forID:)`**, in catalog order — never `block(forID:)`,
-    /// which stays reserved for the verbatim `SelectionMatch.block` a
-    /// selected id looks up afterward (plan.md §4).
+    /// followed by a `# Candidates` header and one entry per catalog id, in
+    /// catalog order. Each entry is the id as a markdown heading above the
+    /// id's **`summaryBlock(forID:)`** — never `block(forID:)`, which stays
+    /// reserved for the verbatim `SelectionMatch.block` a selected id looks
+    /// up afterward (plan.md §4).
     ///
     /// - Parameters:
     ///   - preamble: the selection guidance to prepend.
@@ -294,10 +296,11 @@ public actor SelectionTier {
 
     /// Assembles an instruction prefix for an arbitrary candidate id
     /// set (plan.md §6): `preamble` followed by a `# Candidates` header and
-    /// exactly those ids' **`summaryBlock(forID:)`**, in `ids`' order —
+    /// one `candidateEntry(forID:catalog:)` per id, in `ids`' order —
     /// `assemblePrefix(preamble:catalog:)`'s whole-catalog case is
     /// `ids: catalog.ids`; the over-budget path passes the top-M ranked ids
-    /// instead, best-first.
+    /// instead, best-first. An id the catalog has no summary for is left
+    /// out, exactly as the catalog itself reports it absent.
     ///
     /// - Parameters:
     ///   - preamble: the selection guidance to prepend.
@@ -305,8 +308,27 @@ public actor SelectionTier {
     ///   - catalog: the catalog to look candidate summaries up in.
     /// - Returns: the assembled prefix text.
     public static func assemblePrefix(preamble: String, ids: [String], catalog: any SelectionCatalog) -> String {
-        let summaryBlocks = ids.compactMap { catalog.summaryBlock(forID: $0) }
-        return "\(preamble)\n\n# Candidates\n\(summaryBlocks.joined(separator: "\n\n"))"
+        let entries = ids.compactMap { candidateEntry(forID: $0, catalog: catalog) }
+        return "\(preamble)\n\n# Candidates\n\(entries.joined(separator: "\n\n"))"
+    }
+
+    /// Renders one candidate's prefix entry: the candidate id as a markdown
+    /// heading, with the id's `summaryBlock(forID:)` on the line below.
+    ///
+    /// The heading is what makes the id visible to the model. The preamble
+    /// tells the model "Do not invent ids", so the prefix must show which
+    /// ids exist; a prefix of bare summaries makes the model answer with a
+    /// summary, which then resolves to nothing and reports
+    /// `.unknownSelectedId`. Both `assemblePrefix` overloads render through
+    /// this one function, so the two paths cannot drift apart.
+    ///
+    /// - Parameters:
+    ///   - id: the candidate id to render.
+    ///   - catalog: the catalog to look the candidate summary up in.
+    /// - Returns: the rendered entry, or `nil` if `id` isn't in `catalog`.
+    private static func candidateEntry(forID id: String, catalog: any SelectionCatalog) -> String? {
+        guard let summary = catalog.summaryBlock(forID: id) else { return nil }
+        return "## \(id)\n\(summary)"
     }
 
     // MARK: - Guided-generation grammar

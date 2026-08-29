@@ -108,6 +108,33 @@ struct OverBudgetTests {
         #expect(alphaRange.lowerBound < bravoRange.lowerBound)
     }
 
+    @Test
+    func overBudgetInstructionsCarryOnlyTheTopMCandidateIds() async throws {
+        let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha"]}"#])
+        let config = SelectionConfig(
+            model: factory.makeSession,
+            capacityCharacterLimit: Self.forcedOverBudgetLimit,
+            candidateLimit: 2
+        )
+        let tier = SelectionTier(
+            catalog: Self.catalog,
+            config: config,
+            onDiagnostic: { _ in },
+            retrievalRanking: Self.rankEntireCatalog
+        )
+
+        _ = try await tier.search(intent: "alpha", limit: 5)
+
+        // Each kept candidate is labelled by a markdown heading carrying its
+        // id, so the model can return an id instead of a description. A cut
+        // candidate's id must not appear at all -- the one-off session may
+        // only select from this round's candidates.
+        let instructions = try #require(factory.receivedInstructions.first)
+        #expect(instructions.contains("## alpha"))
+        #expect(instructions.contains("## bravo"))
+        #expect(!instructions.contains("charlie"))
+    }
+
     // MARK: - One-off session: no caching, no fork
 
     @Test

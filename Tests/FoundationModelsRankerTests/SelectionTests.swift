@@ -29,6 +29,15 @@ struct SelectionTests {
         .init(id: "rollback", block: "reverts the last release"),
     ])
 
+    /// Three items whose summaries share no text with their ids, so a
+    /// prefix assertion that finds an id proves the prefix renders the id
+    /// itself -- not a summary that happens to spell it.
+    static let threeItemCatalog = FixtureSelectionCatalog([
+        .init(id: "deploy", block: "the full deploy block", summary: "ships containers to a cluster"),
+        .init(id: "rollback", block: "the full rollback block", summary: "reverts the last release"),
+        .init(id: "status", block: "the full status block", summary: "reports the current release state"),
+    ])
+
     /// Scripted full-catalog ranking for `Self.catalog`, standing in for a
     /// real retrieval tier's `HybridRanker.fullOrdering`-shaped output: one
     /// entry per catalog id with a distinct fused score and per-signal
@@ -132,6 +141,42 @@ struct SelectionTests {
         // The ranking's real fused score/signals attach even under budget.
         #expect(match.score == ranked.score)
         #expect(match.signals == ranked.signals)
+    }
+
+    // MARK: - Candidate ids in the assembled prefix
+
+    @Test
+    func assemblePrefixRendersEveryCandidateIdWithItsSummary() throws {
+        let catalog = Self.threeItemCatalog
+
+        let prefix = SelectionTier.assemblePrefix(preamble: .selectionDefault, catalog: catalog)
+
+        for id in catalog.ids {
+            #expect(prefix.contains(id))
+            let summary = try #require(catalog.summaryBlock(forID: id))
+            #expect(prefix.contains(summary))
+        }
+    }
+
+    @Test
+    func theSeededSessionInstructionsCarryEveryCatalogId() async throws {
+        let factory = RecordingSessionFactory(responses: [#"{"ids":["deploy"]}"#])
+        let config = SelectionConfig(model: factory.makeSession)
+        let tier = SelectionTier(
+            catalog: Self.catalog,
+            config: config,
+            onDiagnostic: { _ in },
+            retrievalRanking: Self.rankEntireCatalog
+        )
+
+        _ = try await tier.search(intent: "task", limit: 5)
+
+        // The preamble tells the model "Do not invent ids", so the prefix
+        // must show it the ids it is allowed to return.
+        let instructions = try #require(factory.receivedInstructions.first)
+        for id in Self.catalog.ids {
+            #expect(instructions.contains(id))
+        }
     }
 
     // MARK: - Ids-only decode + verbatim lookup identity
@@ -273,6 +318,29 @@ struct SelectionTests {
 
         #expect(matches.map(\.id) == ["deploy"])
         #expect(recorder.diagnostics == [.unknownSelectedId(id: "not-a-real-id")])
+    }
+
+    @Test
+    func anItemSummaryAnsweredInPlaceOfItsIdIsFilteredAndReportedAsUnknown() async throws {
+        // The measured `FullMonty` failure mode: a model that answers with
+        // an item's summary text instead of its id. Nothing resolves that
+        // text, so no match comes back and the tier reports it. This pins
+        // the backstop the id-enum grammar used to make unreachable.
+        let recorder = DiagnosticRecorder()
+        let summary = try #require(Self.catalog.summaryBlock(forID: "deploy"))
+        let factory = RecordingSessionFactory(responses: [#"{"ids":["\#(summary)"]}"#])
+        let config = SelectionConfig(model: factory.makeSession)
+        let tier = SelectionTier(
+            catalog: Self.catalog,
+            config: config,
+            onDiagnostic: { recorder.record($0) },
+            retrievalRanking: Self.rankEntireCatalog
+        )
+
+        let matches = try await tier.search(intent: "task", limit: 5)
+
+        #expect(matches.isEmpty)
+        #expect(recorder.diagnostics == [.unknownSelectedId(id: summary)])
     }
 
     // MARK: - `limit <= 0` short-circuits without touching the session
