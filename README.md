@@ -6,8 +6,8 @@ Hybrid search and ranking for Swift: give it a list of things and a query,
 get back ranked results. Under the hood it fuses BM25 keyword matching,
 trigram fuzzy matching, and (optionally) cosine similarity by reciprocal
 rank fusion, then optionally lets an agent make the final pick from the top
-candidates. Targets macOS 27+ and depends on
-[FoundationModelsRouter](https://github.com/swissarmyhammer/FoundationModelsRouter).
+candidates. Targets macOS 27+ and has no external dependency: the package
+builds against the macOS SDK alone.
 
 ```swift
 import FoundationModelsRanker
@@ -28,10 +28,24 @@ let hits = try await searcher.search("how do I find TODO comments in my code")
 // .score and per-signal .signals retrieval reports for the query
 ```
 
-Any `LanguageModelSession` works — the model is never hardcoded. This is
-exactly what the zero-config call above does under the hood
-(`Searcher.defaultSessionFactory`); pass a session factory explicitly to
-swap it for something else:
+Any `LanguageModelSession` works — the model is never hardcoded. If you
+already hold a session, give that session:
+
+```swift
+import FoundationModels
+
+let searcher = try await Searcher(
+    items,
+    session: LanguageModelSession(model: .default, instructions: "Pick the best tools.")
+)
+```
+
+One live session shares one transcript with all the calls.
+`LanguageModelSession.fork()` gives back `self`, because the SDK has no
+branch primitive, so each call adds turns to the same session. Give a
+session factory instead when each call must get a fresh context. The
+factory is also what the zero-config call above does
+(`Searcher.defaultSessionFactory`):
 
 ```swift
 import FoundationModels
@@ -41,23 +55,46 @@ let searcher = try await Searcher(items, session: { instructions in
 })
 ```
 
-The full monty: a Router adds the embedder (cosine joins the fused ranking)
-and supplies the selection session too — still just arguments. See
-[`Examples/FullMonty`](Examples/FullMonty) for the runnable version,
-including how to resolve `profile` from a live `Router`:
+## Bring your own embedder
+
+`TextEmbedding` is `dimension` and `embed(_:)`. Nothing else. Write a
+conformer around your own embedding backend and give it to `Searcher` as
+`embedder:`. Cosine similarity then joins the fused ranking. This package
+ships no embedder of its own, and every embedding backend connects the same
+way:
 
 ```swift
-import FoundationModelsRouter
 import FoundationModelsRanker
 
-let grammar = try SelectionTier.idEnumGrammar(ids: items.map(\.id))
-let searcher = try await Searcher(
-    items,
-    embedder: RoutedEmbedderAdapter(routedEmbedder: profile.embedding),
-    session: { instructions in
-        RoutedAgentSession(session: profile.standard.makeGuidedSession(grammar: grammar, instructions: instructions))
+struct MyEmbedder: TextEmbedding {
+    /// The length of every vector `myBackend` makes.
+    let dimension = 768
+
+    /// Gives the texts to your own embedding backend.
+    func embed(_ texts: [String]) async throws -> [[Float]] {
+        try await myBackend.embed(texts)
     }
-)
+}
+
+let searcher = try await Searcher(items, embedder: MyEmbedder())
+```
+
+`myBackend` is your own embedding service: a local model, or a network
+call.
+[`Examples/FullMontyCore/DemoEmbedder.swift`](Examples/FullMontyCore/DemoEmbedder.swift)
+holds a runnable conformer that needs no model, no GPU, and no network.
+
+## Guided output
+
+`SelectionTier.idEnumSchema(ids:)` gives back a JSON Schema source string.
+The schema limits the answer to the ids you give it, so the model cannot
+invent an id. If your model backend accepts a JSON Schema grammar, give the
+string to that backend:
+
+```swift
+import FoundationModelsRanker
+
+let schema = try SelectionTier.idEnumSchema(ids: items.map(\.id))
 ```
 
 ## Modes
@@ -96,12 +133,16 @@ Add the package to `Package.swift`:
 
 ## Development
 
+- **`swift run FullMonty` has three paths.** With no argument it runs the agent selection
+  tier on the on-device system model, so it needs a Mac with Apple Intelligence turned on.
+  `swift run FullMonty --no-model` prints keyword-only retrieval results. `swift run FullMonty
+  --embedder` adds the cosine signal from a demonstration embedder. The last two paths need no
+  model, no GPU, and no network. See [`Examples/FullMonty`](Examples/FullMonty).
 - **The test `selectionTierWithABareLanguageModelSessionReachesGuidedGeneration` reports
-  "skipped" under a plain `swift test`.** The test needs a real `SystemLanguageModel` session.
-  The test runs only when you set the environment variable
-  `FOUNDATIONMODELSRANKER_INTEGRATION_TESTS=1`. `Examples/FullMonty` uses the same environment
-  variable to gate its live-model path. Set the variable and run the test on a Mac with Apple
-  Intelligence turned on.
+  "skipped" under a plain `swift test`.** The test needs a real `SystemLanguageModel` session,
+  and it needs nothing else. The test runs only when you set the environment variable
+  `FOUNDATIONMODELSRANKER_INTEGRATION_TESTS=1`. Set the variable and run the test on a Mac with
+  Apple Intelligence turned on.
 
 ## License
 

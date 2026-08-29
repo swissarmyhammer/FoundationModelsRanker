@@ -148,11 +148,42 @@ comments:
     - verification: `grep -rniw "router" Sources Tests Examples Package.swift` finds nothing; `swift build` exit 0, 0 warnings; `swift test` exit 0, 269 tests in 21 suites passed, 0 warnings.
     - next: `/review`
   timestamp: 2026-08-29T18:24:05.317954+00:00
+- actor: claude-code
+  id: 01m17ccghzj9z2ym8mmjby60rd
+  text: |-
+    ### commit — changed
+    - evidence: 91b38b2 docs: remove the word Router from doc comments (9 files, 167 insertions, 17 deletions). Local commit only, not pushed.
+    - next: none
+  timestamp: 2026-08-29T18:26:51.071547+00:00
+- actor: claude-code
+  id: 01m17cj23n0r2fsgewa7fsabm0
+  text: |
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 91b38b2) gave 0 findings, 0 confirmed, 0 refuted, 7 attempted, 0 failed. 7 files reviewed; 2 `.kanban/` files excluded by `.reviewignore`. The stale index at `.build/out` was removed and `swift build --build-tests` ran again first (exit 0, "Build complete! (8.17 sec)"), thus no false "unused symbol" result. All 10 prior findings are corrected and checked.
+    - merit checks, each done by hand on the diff:
+      - Each of the 10 comments keeps its information. No comment was made empty, and no sentence was deleted to answer a finding. `SelectionTier.idEnumSchema(ids:)` keeps both the guidance and the concrete example: "A caller whose model backend accepts a JSON Schema grammar makes a grammar from the text with that backend's own grammar type, for example `Grammar.jsonSchema(SelectionTier.idEnumSchema(ids: ids))`." The one comment that lost text is `ReadmeExampleTests.swift:10`, which now names only the on-device model. The finding permits that form.
+      - The new wording is correct. It agrees with the code: `idEnumSchema(ids:)` is `public static func idEnumSchema(ids: [String]) throws -> String`, and `SelectionTier.swift:55` and `SelectionConfig.swift:57` both say the tier applies no grammar of its own and that a caller applies its own grammar when it makes the session. Thus "a session that an external grammar constrains" and "that backend's own grammar type" name a contract that exists. No comment claims a capability this package does not have. "no external dependency" is true, because `Package.swift` declares `dependencies: []`.
+      - `grep -rniw "router" Sources Tests Examples Package.swift` finds nothing (exit 1).
+    - out of scope, not examined: `README.md` (card ^jdw7sf0) and `plan.md` (card ^3t4nhk7).
+    - next: none. Task moved to `done`.
+  timestamp: 2026-08-29T18:29:52.885236+00:00
+- actor: claude-code
+  id: 01m17cjxqj8v2td1frfzz0h67p
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 7 files; all 10 "Router" doc comments reworded, never blank-deleted
+    - test: green — swift build 0 warnings; swift test 269 tests, 268 passed, 1 documented gated skip; `grep -rniw "router" Sources Tests Examples Package.swift` finds nothing
+    - commit: 91b38b2 — 9 files changed
+    - review: clean — all 10 prior findings resolved; the reviewer confirmed each comment kept its information and that the replacement wording names a contract that really exists
+    - next: none — task is in done
+
+    Milestone complete. The package declares zero external dependencies, needs no SSH key, and no file under Sources, Tests, Examples or Package.swift names Router, MLX, Hugging Face, Tokenizers or Jinja.
+  timestamp: 2026-08-29T18:30:21.170871+00:00
 depends_on:
 - 01M16WTVGW4GDJK9MD6CD4GEYS
 - 01M16WW6WN0638CJKEJ3XEHKMV
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: 9c80
 title: Delete every external package dependency from Package.swift
 ---
 ## What
