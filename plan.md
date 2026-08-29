@@ -305,14 +305,24 @@ per-id item/block lookup, and summary rendering — so the generalization is:
   session, ids-only grammar-constrained output, verbatim block lookup.
 - **Selection prompt: default in FoundationModelsRanker, override per consumer.** The
   prompt is `SelectionConfig.preamble` (the full prefix is preamble +
-  `# Candidates` + each candidate's summary block, assembled in
-  `SelectionTier.assemblePrefix`). FoundationModelsRanker ships the default —
-  `String.selectionDefault`, the proven librarian guidance with neutral
-  wording ("return ONLY the items needed — fewest that suffice, in call
-  order when order matters; do not invent ids; return an empty list if
-  nothing fits"). Consumers pass their own domain-flavored guidance via the
-  `preamble:` parameter, keeping their model-visible prompts under their
-  own control.
+  `# Candidates` + one entry for each candidate, assembled in
+  `SelectionTier.assemblePrefix`; each entry is the candidate id as a
+  `## <id>` markdown heading above that candidate's summary block).
+  FoundationModelsRanker ships the default — `String.selectionDefault`, the
+  proven librarian guidance with neutral wording ("return ONLY the items
+  needed — fewest that suffice, in call order when order matters; do not
+  invent ids; return an empty list if nothing fits"). Consumers pass their
+  own domain-flavored guidance via the `preamble:` parameter, keeping their
+  model-visible prompts under their own control.
+
+  *Amended 2026-08-29 (task `^3t4nhk7`).* This bullet first read: "the full
+  prefix is preamble + `# Candidates` + each candidate's summary block,
+  assembled in `SelectionTier.assemblePrefix`". Task `^g69hyyc` put a
+  `## <id>` heading above each summary block. A prefix that shows only the
+  summary blocks does not show the model which ids it can return. The text
+  above shows the format that `SelectionTier.assemblePrefix` makes now, so
+  the `SelectionTier` doc comments that point to this section agree with the
+  code again.
 - Conform Apple's `LanguageModelSession` to `AgentSession` (retroactive
   conformance in FoundationModelsRanker) so any FoundationModels model — `.fast`,
   `.default`, adapter-loaded — plugs into the selection seam without Router

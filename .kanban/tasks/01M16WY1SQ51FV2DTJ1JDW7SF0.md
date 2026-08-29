@@ -60,11 +60,48 @@ comments:
     - `swift run FullMonty --no-model` exit 0. `swift run FullMonty --embedder` exit 0.
     - next: none. Build and test suite are clean.
   timestamp: 2026-08-29T18:44:05.419248+00:00
+- actor: claude-code
+  id: 01m17dem6jybedtbxh0481ry3k
+  text: |-
+    ### commit — changed
+    - evidence: 59c348b docs(readme): rewrite README for a package with no dependency (8 files changed, 333 insertions, 60 deletions)
+    - next: push is not done. A human must push the commit.
+  timestamp: 2026-08-29T18:45:28.914936+00:00
+- actor: claude-code
+  id: 01m17dr1mv6bw1thnd83kkhhe9
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 59c348b). counts: 0 findings, 0 confirmed, 0 refuted, 7 attempted, 0 failed. The engine read the three Swift files of the change. It read no `README.md`, because no validator matches a Markdown file, and it read no `.kanban/` file, because an ignore rule holds them out.
+    - The engine gives no cover to `README.md`, so each claim of the document was compared to the source by hand. Every claim is true:
+      - No dependency: `Package.swift` has `dependencies: []` and holds no `.package(` text.
+      - `Searcher(items, session: oneSession)`: `Searcher.swift` has a second public initializer that takes `session: any AgentSession`. `LanguageModelSessionSupport.swift` gives `extension LanguageModelSession: AgentSession`, so the block of the README compiles for a reader who has the package.
+      - Shared transcript: `LanguageModelSession.fork()` gives back `self`. The prose of the README agrees with the header of `LanguageModelSessionSupport.swift` and with the header of `Searcher.swift`.
+      - `TextEmbedding`: the protocol has `dimension` and `embed(_:)` and nothing more.
+      - `SelectionTier.idEnumSchema(ids:)`: `public actor SelectionTier` holds `public static func idEnumSchema(ids: [String]) throws -> String`. Both the type and the method are public, so the block is correct for a reader outside the package, and the `@testable import` of the test hides no access problem.
+      - Three `swift run FullMonty` paths: `Examples/FullMonty/main.swift` makes a branch on `--no-model`, then on `--embedder`, then goes to the default path on the on-device model.
+    - Test cover of the Swift blocks: each block has a test that compiles it and runs it. The lead block, the one live session block, the factory block, the embedder block and the guided output block each have one test in `ReadmeExampleTests.swift`. The `MyEmbedder` type of the README is in the test file word for word.
+    - The `## Install` exception is correct and sufficient. The block is a `PackageDescription` fragment, and SwiftPM gives that module to no target, so no test can compile it. The suite header and the test comment both give this reason, so the exception is not hidden. `theInstallSnippetNamesThisPackagesRepository` holds the URL of the README to the package name that `Package.swift` declares, which is the one part of the block that can become wrong in this repository.
+    - The guard test still guards. `theManifestDeclaresNoPackageDependency` in `PackageTests.swift` is not changed: it reads `manifestURL` and makes the same assertion `#expect(!manifest.contains(".package("))`. The change moved only the private `repositoryRootURL` walk to `Support/RepositoryRoot.swift`. The new walk deletes four path components from `Tests/FoundationModelsRankerTests/Support/RepositoryRoot.swift`, which gives the repository root, so `manifestURL` points at the real `Package.swift` on disk.
+    - Out of scope, as the card of `^3t4nhk7` says: `plan.md` keeps the old design as history.
+    - next: none. Task moves to done.
+  timestamp: 2026-08-29T18:50:37.595326+00:00
+- actor: claude-code
+  id: 01m17ds2174nkqgsgfn3sw4g98
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 4 files; README rewritten for a package with no dependencies, one test per code block, a drift guard, and a shared repository-root helper
+    - test: green — swift build 0 warnings; swift test 273 tests, 272 passed, 1 documented gated skip; `grep -in "router\|mlx\|huggingface" README.md` finds nothing
+    - commit: 59c348b — 8 files changed, 333 insertions, 60 deletions
+    - review: clean — zero findings; the reviewer checked every README claim against the source by hand, since no validator reads Markdown
+    - next: none — task is in done
+
+    The reviewer confirmed the one untested code block (`## Install`, a PackageDescription fragment no target can compile) is honestly documented as such, and that the manifest guard test kept its assertion through the repository-root move.
+  timestamp: 2026-08-29T18:51:10.759998+00:00
 depends_on:
 - 01M16WWNSAG4EN2JDCQ2Q0P8GR
 - 01M16WXKX259CBHMWBENQ132HW
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: 9d80
 title: Rewrite the README for a package with no dependencies
 ---
 ## What
