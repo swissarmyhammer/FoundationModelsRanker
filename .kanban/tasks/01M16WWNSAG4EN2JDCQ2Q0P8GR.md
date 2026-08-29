@@ -1,6 +1,18 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m1755nv0g0fveew2df861pzx
+  text: |-
+    ### Extra work this card must do (found 2026-08-29 by ^cd4geys)
+
+    The card's "Files to change" list is incomplete. Add this:
+
+    - `Tests/FoundationModelsRankerTests/Support/ScriptedAgentSession.swift` still has `import FoundationModelsRouter`. That import became unused when `^4kx83sx` deleted `receivedGrammars` and the `Grammar` parameter. Delete the import. The test target cannot compile once `Package.swift` drops the dependency, so this is not optional.
+
+    Before you touch `Package.swift`, run `grep -rn "FoundationModelsRouter\|MLX\|HuggingFace\|Tokenizers\|Jinja" Sources Tests Examples` and delete every import the scan finds. `Sources/` is already clean as of `^cd4geys`.
+  timestamp: 2026-08-29T16:20:47.072698+00:00
 depends_on:
 - 01M16WTVGW4GDJK9MD6CD4GEYS
 - 01M16WW6WN0638CJKEJ3XEHKMV

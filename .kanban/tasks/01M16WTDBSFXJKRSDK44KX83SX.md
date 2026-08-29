@@ -34,10 +34,40 @@ comments:
     - evidence: 10 files — Sources/FoundationModelsRanker/Selection/SelectionConfig.swift, Sources/FoundationModelsRanker/Selection/SelectionTier.swift, Sources/FoundationModelsRanker/Selection/LanguageModelSessionSupport.swift, Sources/FoundationModelsRanker/Searcher.swift, Tests/FoundationModelsRankerTests/Support/ScriptedAgentSession.swift, Tests/FoundationModelsRankerTests/SelectionTests.swift, Tests/FoundationModelsRankerTests/OverBudgetTests.swift, Tests/FoundationModelsRankerTests/SelectionConfigTests.swift, Tests/FoundationModelsRankerTests/AgentSessionDispatchTests.swift, Tests/FoundationModelsRankerTests/LanguageModelSessionSupportTests.swift. `swift build` 0 errors. `swift test` 254 tests in 21 suites passed, 0 failures. `grep -rn "Grammar" Sources/FoundationModelsRanker/Selection/SelectionConfig.swift` finds nothing.
     - next: /review
   timestamp: 2026-08-29T15:50:42.506739+00:00
+- actor: claude-code
+  id: 01m173qy2jybve05rgaqt5a1ga
+  text: |-
+    ### commit — changed
+    - evidence: 392bb5f refactor(selection): remove the Grammar argument from the session factory (14 files changed, 191 insertions, 217 deletions)
+    - next: none
+  timestamp: 2026-08-29T15:55:48.178221+00:00
+- actor: claude-code
+  id: 01m1744qd35175vj90h8602tyc
+  text: |
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 392bb5f), 10 files reviewed, 7 validators attempted, 0 findings, 0 confirmed, 0 refuted. All acceptance-criteria items and all test items are checked. No prior `## Review Findings` section is open.
+    - Confirmed on request: the four extra test files (`SelectionConfigTests.swift`, `AgentSessionDispatchTests.swift`, `OverBudgetTests.swift`, `SelectionTests.swift`) each hold two-argument `SelectionConfig(model:)` closures. The test target cannot compile without the change. Each edit is only the argument-list change, the deletion of the two grammar tests the card names, and the removal of the two imports those tests made unused.
+    - Confirmed on request: the new file header of `LanguageModelSessionSupport.swift` is correct. `Searcher.init` declares `session: (@Sendable (String) -> any AgentSession)?` and `SelectionConfig.model` is `@Sendable (String) -> any AgentSession`. The two seams do have the same shape, and this file does override `respond(to:generating:)`.
+    - Confirmed on request: `cachedRootSession()` is correctly non-throwing. Its body only reads `rootSession` and calls the non-throwing `config.model(_:)`. Its one caller, `SelectionTier.swift:141`, is `try await cachedRootSession().fork()`; the `try await` applies to `fork()`.
+    - Confirmed on request: no caller loses a capability. `Searcher.swift` already discarded the grammar. `Examples/` holds no reference to `SelectionConfig` or `Grammar`. `swift build --build-tests` completes with no error.
+    - next: none
+  timestamp: 2026-08-29T16:02:47.331907+00:00
+- actor: claude-code
+  id: 01m1745q0wp5kn8bevgn62m2mx
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 10 files; SelectionConfig.model is now `@Sendable (String) -> any AgentSession`, cachedRootSession() is no longer async throws, Searcher forwards its factory directly
+    - test: green — swift test, 254 passed, 0 failed, 0 unexpected skipped; both FullMonty paths exit 0
+    - commit: 392bb5f — 14 files changed, 191 insertions, 217 deletions
+    - review: clean — zero findings; all three directed checks passed, including that no caller lost a capability it used
+    - next: none — task is in done
+
+    Two intended transients carried into the next card `^cd4geys`: `Support/GrammarTestSupport.swift` has no caller, and `SelectionConfig.swift`'s docs name `SelectionTier.idEnumSchema(ids:)`, which does not exist yet.
+  timestamp: 2026-08-29T16:03:19.708514+00:00
 depends_on:
 - 01M17004BEPEN2YVD6MG69HYYC
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '9880'
 title: Remove the Grammar argument from the selection session seam
 ---
 ## What

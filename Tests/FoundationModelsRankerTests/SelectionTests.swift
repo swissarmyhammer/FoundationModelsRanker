@@ -1,5 +1,4 @@
 import Foundation
-import FoundationModelsRouter
 import Testing
 
 @testable import FoundationModelsRanker
@@ -9,8 +8,8 @@ import Testing
 /// `search()` call, the summary-vs-full block separation
 /// (`summaryBlock(forID:)` seeds the prefix; `block(forID:)` is what a
 /// `SelectionMatch` carries back verbatim), ids-only decoding, verbatim
-/// lookup by id, unknown-id filtering + diagnostic, and the id-enum
-/// grammar's contents.
+/// lookup by id, unknown-id filtering + diagnostic, and the id-enum JSON
+/// Schema's contents.
 ///
 /// Ported from FoundationModelsMetadataRegistry's
 /// `Tests/FoundationModelsMetadataRegistryTests/SelectionTests.swift`, driven
@@ -377,44 +376,43 @@ struct SelectionTests {
         #expect(factoryCallCount.count == 0)
     }
 
-    // MARK: - Grammar id-set contents
+    // MARK: - Id-enum JSON Schema contents
 
     @Test
-    func idEnumGrammarContainsExactlyTheCatalogsCurrentIds() throws {
-        let grammar = try SelectionTier.idEnumGrammar(ids: Self.catalog.ids)
+    func idEnumSchemaIsWellFormedJson() throws {
+        // The function hands back schema *source text*, which a Router caller
+        // wraps as `Grammar.jsonSchema(...)`. Text that does not parse as JSON
+        // fails only later, inside that caller's grammar compiler, so parse it
+        // here.
+        let schema = try SelectionTier.idEnumSchema(ids: Self.catalog.ids)
 
-        guard case .jsonSchema(let source) = grammar else {
-            Issue.record("expected a .jsonSchema grammar")
-            return
+        let data = try #require(schema.data(using: .utf8))
+
+        #expect(throws: Never.self) {
+            try JSONSerialization.jsonObject(with: data)
         }
-        let data = try #require(source.data(using: .utf8))
-        let root = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        let properties = try #require(root["properties"] as? [String: Any])
-        let idsSchema = try #require(properties["ids"] as? [String: Any])
-        let itemsSchema = try #require(idsSchema["items"] as? [String: Any])
-        let enumValues = try #require(itemsSchema["enum"] as? [String])
-
-        #expect(Set(enumValues) == Set(Self.catalog.ids))
     }
 
     @Test
-    func idEnumGrammarMarksIdsAsUniqueItems() throws {
-        let grammar = try SelectionTier.idEnumGrammar(ids: Self.catalog.ids)
+    func idEnumSchemaContainsExactlyTheCatalogsCurrentIds() throws {
+        let schema = try SelectionTier.idEnumSchema(ids: Self.catalog.ids)
 
-        guard case .jsonSchema(let source) = grammar else {
-            Issue.record("expected a .jsonSchema grammar")
-            return
-        }
-        let data = try #require(source.data(using: .utf8))
-        let root = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        let properties = try #require(root["properties"] as? [String: Any])
-        let idsSchema = try #require(properties["ids"] as? [String: Any])
+        let enumIds = try SelectionSchemaTestSupport.enumIds(in: schema)
+
+        #expect(enumIds == Set(Self.catalog.ids))
+    }
+
+    @Test
+    func idEnumSchemaMarksIdsAsUniqueItems() throws {
+        let schema = try SelectionTier.idEnumSchema(ids: Self.catalog.ids)
+
+        let idsSchema = try SelectionSchemaTestSupport.idsSchema(in: schema)
 
         #expect(idsSchema["uniqueItems"] as? Bool == true)
     }
 
     @Test
-    func idEnumGrammarBoundsIdsWithMaxItemsAtTheCandidateCount() throws {
+    func idEnumSchemaBoundsIdsWithMaxItemsAtTheCandidateCount() throws {
         // `maxItems` is what actually stops runaway generation: the xgrammar
         // pipeline enforces `minItems`/`maxItems` but silently ignores
         // `uniqueItems`, so without this bound the compiled grammar permits
@@ -423,35 +421,19 @@ struct SelectionTests {
         // the registry's ^678h0ex fix). A selection can never legitimately
         // exceed the candidate count, so `ids.count` is the exact structural
         // cap.
-        let grammar = try SelectionTier.idEnumGrammar(ids: Self.catalog.ids)
+        let schema = try SelectionTier.idEnumSchema(ids: Self.catalog.ids)
 
-        guard case .jsonSchema(let source) = grammar else {
-            Issue.record("expected a .jsonSchema grammar")
-            return
-        }
-        let data = try #require(source.data(using: .utf8))
-        let root = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        let properties = try #require(root["properties"] as? [String: Any])
-        let idsSchema = try #require(properties["ids"] as? [String: Any])
+        let idsSchema = try SelectionSchemaTestSupport.idsSchema(in: schema)
 
         #expect(idsSchema["maxItems"] as? Int == Self.catalog.ids.count)
     }
 
     @Test
-    func idEnumGrammarReflectsAnEmptyCatalogAsAnEmptyEnum() throws {
-        let grammar = try SelectionTier.idEnumGrammar(ids: [])
+    func idEnumSchemaReflectsAnEmptyCatalogAsAnEmptyEnum() throws {
+        let schema = try SelectionTier.idEnumSchema(ids: [])
 
-        guard case .jsonSchema(let source) = grammar else {
-            Issue.record("expected a .jsonSchema grammar")
-            return
-        }
-        let data = try #require(source.data(using: .utf8))
-        let root = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        let properties = try #require(root["properties"] as? [String: Any])
-        let idsSchema = try #require(properties["ids"] as? [String: Any])
-        let itemsSchema = try #require(idsSchema["items"] as? [String: Any])
-        let enumValues = try #require(itemsSchema["enum"] as? [String])
+        let enumIds = try SelectionSchemaTestSupport.enumIds(in: schema)
 
-        #expect(enumValues.isEmpty)
+        #expect(enumIds.isEmpty)
     }
 }

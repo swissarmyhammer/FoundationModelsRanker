@@ -7,7 +7,6 @@
 // carry); `MetadataDiagnostic` becomes `RankDiagnostic`. Semantics unchanged.
 
 import Foundation
-import FoundationModelsRouter
 
 /// The selection tier's dynamic session over a `SelectionCatalog` (plan.md
 /// §6): generalizes FoundationModelsMetadataRegistry's own `SelectionTier`,
@@ -48,7 +47,7 @@ import FoundationModelsRouter
 /// id as a markdown heading, so the model can read the ids it may return.
 /// This tier applies no grammar of its own: a caller that wants guided
 /// generation applies one when it makes the session, and
-/// `idEnumGrammar(ids:)` gives that caller the id set — the whole catalog
+/// `idEnumSchema(ids:)` gives that caller the id set — the whole catalog
 /// under budget, the top-M ranked ids over budget. Returned ids map back
 /// through the catalog to verbatim `SelectionMatch`es; an id outside the
 /// current candidate set is filtered and reported via
@@ -318,28 +317,34 @@ public actor SelectionTier {
         return "## \(id)\n\(summary)"
     }
 
-    // MARK: - Guided-generation grammar
+    // MARK: - Guided-generation JSON Schema
 
-    /// Derives the xgrammar JSON Schema constraining `Selection.ids` to
-    /// exactly `ids` (plan.md §6 "IDs only, grammar-enforced") — the same
-    /// derive-then-wrap pattern as Multitool's own
-    /// `Librarian.grammarSchemaSource()` (which wraps the analogous derived
-    /// schema in `Grammar.jsonSchema(_:)`), with an `enum` constraint
-    /// injected into the `ids` array's `items` subschema so the model is
-    /// structurally incapable of inventing an id outside the current
-    /// candidate set, and a `maxItems` cap of `ids.count` so it cannot emit
-    /// more ids than there are candidates (the enforcement backstop for
-    /// `uniqueItems`, which the xgrammar pipeline silently ignores).
+    /// Makes the JSON Schema source text that limits `Selection.ids` to
+    /// exactly `ids` (plan.md §6 "IDs only, grammar-enforced"). This is the
+    /// same derived schema as Multitool's own
+    /// `Librarian.grammarSchemaSource()`.
     ///
-    /// - Parameter ids: the candidate id set to constrain output to — the
-    ///   full catalog's ids under budget, the top-M ranked ids over budget.
-    /// - Returns: the xgrammar-ready `Grammar.jsonSchema(_:)`.
-    /// - Throws: an encoding error if `Selection.generationSchema` can't be
-    ///   encoded to JSON (not expected for a valid `@Generable` type), or
-    ///   `SelectionSchemaShapeError` if its encoded shape doesn't have the
-    ///   expected `properties.ids.items` subschema to constrain (not expected
-    ///   for `Selection`'s fixed shape).
-    public static func idEnumGrammar(ids: [String]) throws -> Grammar {
+    /// The schema puts an `enum` constraint on the `items` subschema of the
+    /// `ids` array. The `enum` prevents the model from inventing an id that
+    /// is not in the current candidate set. The schema also sets `maxItems`
+    /// to `ids.count`. This cap prevents the model from giving more ids than
+    /// there are candidates. The cap is the backstop for `uniqueItems`, which
+    /// the xgrammar pipeline ignores.
+    ///
+    /// This function gives the schema text only. A Router caller makes a
+    /// grammar from the text:
+    /// `Grammar.jsonSchema(SelectionTier.idEnumSchema(ids: ids))`.
+    ///
+    /// - Parameter ids: the candidate ids to limit the output to. Use the
+    ///   full catalog's ids under budget, or the top-M ranked ids over
+    ///   budget.
+    /// - Returns: the JSON Schema source text.
+    /// - Throws: an encoding error if `Selection.generationSchema` cannot be
+    ///   encoded to JSON. This is not expected for a valid `@Generable` type.
+    ///   Throws `SelectionSchemaShapeError` if the encoded shape does not have
+    ///   the expected `properties.ids.items` subschema to constrain. This is
+    ///   not expected for `Selection`'s fixed shape.
+    public static func idEnumSchema(ids: [String]) throws -> String {
         let data = try JSONEncoder().encode(Selection.generationSchema)
         guard var root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
             var properties = root["properties"] as? [String: Any],
@@ -366,11 +371,11 @@ public actor SelectionTier {
         root["properties"] = properties
 
         let constrained = try JSONSerialization.data(withJSONObject: root)
-        return .jsonSchema(String(decoding: constrained, as: UTF8.self))
+        return String(decoding: constrained, as: UTF8.self)
     }
 }
 
-/// Thrown by `SelectionTier.idEnumGrammar(ids:)` if `Selection`'s encoded
+/// Thrown by `SelectionTier.idEnumSchema(ids:)` if `Selection`'s encoded
 /// `GenerationSchema` doesn't have the expected `properties.ids.items`
 /// subschema shape to inject an `enum` constraint into — not expected for
 /// `Selection`'s fixed shape, kept as a genuine (if practically unreachable)

@@ -1,10 +1,67 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m174h15e6a93gxg9ntccrsgy
+  text: |
+    Picked up. Research notes (line numbers on the card are stale after six commits; every symbol found by name):
+
+    - `idEnumGrammar(ids:)` is in `Sources/FoundationModelsRanker/Selection/SelectionTier.swift`, under the `MARK: - Guided-generation grammar` section. `import FoundationModelsRouter` is the only Router reference left in `Sources/`. `AgentSession.swift` and `RoutedEmbedderAdapter.swift` no longer import Router, so this card makes `Sources/` fully Router-free.
+    - The header doc of `SelectionTier` names `idEnumGrammar(ids:)`; it must become `idEnumSchema(ids:)`.
+    - `SelectionConfig.swift` already names `SelectionTier.idEnumSchema(ids:)` twice (the file header and the `model` doc comment). That is a forward reference the previous card left on purpose. Keep it.
+    - The four schema tests are in `SelectionTests.swift` under `MARK: - Grammar id-set contents`. Each one repeats the same seven-line JSON walk (data -> root -> properties -> ids -> items -> enum).
+    - `Tests/.../Support/GrammarTestSupport.swift` has no caller. Its `enumIds(in:)` gives only the enum id set; two of the four tests need `uniqueItems` and `maxItems`, which live on the `ids` subschema, one level up.
+    - `OverBudgetTests.swift` already has no `import FoundationModelsRouter`; only `SelectionTests.swift`, `SearcherTests.swift`, and `Support/ScriptedAgentSession.swift` still have it. The card lists the first two. `ScriptedAgentSession.swift` is out of this card's scope; task ^2q0p8gr (delete every external package dependency) covers it.
+    - `README.md` still shows `SelectionTier.idEnumGrammar`; task ^jdw7sf0 (rewrite the README) covers it. `plan.md` also names `idEnumGrammar`; out of scope here.
+    - Baseline `swift build` is green.
+  timestamp: 2026-08-29T16:09:30.542812+00:00
+- actor: claude-code
+  id: 01m1754fknsym7k0xbabw3ydf1
+  text: |
+    Implementation landed. TDD order was kept: the tests went in first and the build failed with five `type 'SelectionTier' has no member 'idEnumSchema'` errors, which is the expected reason. Then the source change made them pass.
+
+    Decisions a later agent should know:
+
+    1. **The unused test helper was renamed and put back to work, not deleted.** `GrammarTestSupport.swift` had no caller after the previous card. It is now `Support/SelectionSchemaTestSupport.swift`, enum `SelectionSchemaTestSupport`. Deleting it was the other option, but keeping it is better: each of the four schema tests repeated the same JSON walk from the schema source down to `properties.ids`, and that repeat is what the duplication rule reports. The helper now has two functions, so it serves all four tests, not only two:
+       - `idsSchema(in:)` returns the `properties.ids` subschema. The `uniqueItems` test and the `maxItems` test read their values from it.
+       - `enumIds(in:)` builds on `idsSchema(in:)` and returns the `properties.ids.items.enum` id set. The "exactly the catalog ids" test and the "empty catalog" test use it.
+       Both take a `String` schema source. The `guard case .jsonSchema` block and the Router import are gone. The file no longer needs `@testable import FoundationModelsRanker` either, because it now names no Ranker symbol; that import was removed as dead code. Parsing the schema and asserting on extracted values also keeps the tests free of `JSONSerialization`'s unstable key order.
+
+    2. **`SelectionConfig.swift` was left as it is.** Its file header and its `model` doc comment both name `SelectionTier.idEnumSchema(ids:)`. That was a forward reference. The symbol now exists, so both lines read correctly. Verified, not deleted.
+
+    3. **One wording choice.** The card asks the doc comment to tell a Router caller how to wrap the result. The instruction for this card also requires that `grep -rn "FoundationModelsRouter" Sources/` finds nothing. The doc comment says "A Router caller makes a grammar from the text: `Grammar.jsonSchema(SelectionTier.idEnumSchema(ids: ids))`". "Router" is the shorthand this repository already uses in doc comments. This satisfies both requirements.
+
+    4. **Every schema rule is unchanged.** The `enum` on `properties.ids.items`, `uniqueItems`, and the `maxItems` cap all stay. The comment about the ~6150-token runaway stays word for word. Only the `.jsonSchema(...)` wrap was removed from the return.
+
+    Out of scope, and left for the cards that own them:
+    - `Tests/.../Support/ScriptedAgentSession.swift` still has `import FoundationModelsRouter`. The card does not list it. Task ^2q0p8gr (delete every external package dependency) covers it.
+    - `README.md` still shows `SelectionTier.idEnumGrammar`. Task ^jdw7sf0 (rewrite the README) covers it.
+    - `plan.md` still names `idEnumGrammar` in two places.
+
+    Results: `swift build` complete, no error. `swift test` gives 255 tests in 21 suites, all passed (baseline was 254; the new JSON parse test is the one added). The only warning in the output is the pre-existing SwiftPM build-system line about the `mlx-swift_Cmlx.bundle` node, which the baseline run gives too.
+  timestamp: 2026-08-29T16:20:07.925571+00:00
+- actor: claude-code
+  id: 01m1754mkbfz4fc9gyezep6tyw
+  text: |
+    ### implement — changed
+    - evidence: 5 files — Sources/FoundationModelsRanker/Selection/SelectionTier.swift, Tests/FoundationModelsRankerTests/SelectionTests.swift, Tests/FoundationModelsRankerTests/SearcherTests.swift, Tests/FoundationModelsRankerTests/Support/GrammarTestSupport.swift -> Support/SelectionSchemaTestSupport.swift (git mv + rewrite). `swift build` complete, no error. `swift test`: 255 tests in 21 suites passed, 0 failed. `grep -rn "FoundationModelsRouter" Sources/` finds nothing.
+    - next: /review
+  timestamp: 2026-08-29T16:20:13.035096+00:00
+- actor: claude-code
+  id: 01m175hm452bfnmn3t905155km
+  text: |
+    ### test — green
+    - evidence: `swift test` — 255 tests, 21 suites, all passed, 0 failures, 0 warnings, 0 unexpected skips (the one integration test gated by `FOUNDATIONMODELSRANKER_INTEGRATION_TESTS` stays off, as intended)
+    - verified: `grep -rn "FoundationModelsRouter" Sources/` finds nothing; `swift run FullMonty --no-model` exit 0; `swift run FullMonty --embedder` exit 0 (only warning seen: the documented `mlx-swift` `Cmlx.bundle` "missing creator for mutated node" warning)
+    - verified: `SelectionTier.idEnumSchema(ids:)` returns `String`; `idEnumGrammar` is gone from `Sources/`; `Tests/FoundationModelsRankerTests/Support/SelectionSchemaTestSupport.swift` exists with `idsSchema(in:)` and `enumIds(in:)`
+    - noted, not fixed (out of scope, belongs to card `^2q0p8gr`): `Tests/FoundationModelsRankerTests/Support/ScriptedAgentSession.swift` still has an unused `import FoundationModelsRouter`
+    - next: proceed to review
+  timestamp: 2026-08-29T16:27:18.533885+00:00
 depends_on:
 - 01M16WTDBSFXJKRSDK44KX83SX
-position_column: todo
-position_ordinal: '8180'
+position_column: doing
+position_ordinal: '80'
 title: Change idEnumGrammar to idEnumSchema and return a JSON Schema String
 ---
 ## What
@@ -24,15 +81,15 @@ Files to change:
 
 ## Acceptance Criteria
 
-- [ ] `SelectionTier.idEnumSchema(ids:)` returns `String` and `idEnumGrammar` no longer exists.
-- [ ] `grep -rn "FoundationModelsRouter" Sources/` finds only `AgentSession.swift` and `RoutedEmbedderAdapter.swift`. Other tasks delete those.
-- [ ] `swift build` gives no error.
+- [x] `SelectionTier.idEnumSchema(ids:)` returns `String` and `idEnumGrammar` no longer exists.
+- [x] `grep -rn "FoundationModelsRouter" Sources/` finds only `AgentSession.swift` and `RoutedEmbedderAdapter.swift`. Other tasks delete those. — Those two files lost their imports in earlier cards, so the grep now finds nothing at all in `Sources/`.
+- [x] `swift build` gives no error.
 
 ## Tests
 
-- [ ] The four renamed tests in `Tests/FoundationModelsRankerTests/SelectionTests.swift` keep their assertions: the schema holds exactly the catalog ids, it marks `uniqueItems`, it bounds `maxItems` at the candidate count, and an empty catalog gives an empty `enum`.
-- [ ] Add a test that `idEnumSchema(ids:)` returns text that `JSONSerialization.jsonObject(with:)` reads without an error.
-- [ ] `swift test` passes.
+- [x] The four renamed tests in `Tests/FoundationModelsRankerTests/SelectionTests.swift` keep their assertions: the schema holds exactly the catalog ids, it marks `uniqueItems`, it bounds `maxItems` at the candidate count, and an empty catalog gives an empty `enum`.
+- [x] Add a test that `idEnumSchema(ids:)` returns text that `JSONSerialization.jsonObject(with:)` reads without an error.
+- [x] `swift test` passes.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
