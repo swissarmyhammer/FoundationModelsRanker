@@ -1,5 +1,4 @@
 import Foundation
-import FoundationModelsRouter
 import os
 
 @testable import FoundationModelsRanker

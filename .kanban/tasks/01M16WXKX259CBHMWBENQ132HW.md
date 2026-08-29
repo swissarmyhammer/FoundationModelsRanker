@@ -50,10 +50,41 @@ comments:
     - evidence: 2 files -- `Sources/FoundationModelsRanker/Searcher.swift` (new public `session: any AgentSession` initializer, one shared private `sessionSource:` initializer both public initializers delegate to, `selectionConfig(sessionSource:preamble:candidateLimit:)` helper, type doc and both `session:` parameter docs rewritten with the shared-transcript note), `Tests/FoundationModelsRankerTests/SearcherTests.swift` (5 new tests). `swift build` clean; `swift test` 268 passed, 0 failed, 0 warnings (263 before). swiftlint with the validator configuration: 0 violations.
     - next: /review
   timestamp: 2026-08-29T17:36:08.943317+00:00
+- actor: claude-code
+  id: 01m179nf3m3wj4h6wq4gyech1a
+  text: |-
+    ### commit — changed
+    - evidence: 7b1a3e7 feat(searcher): add an initializer that takes one AgentSession — 6 files changed, 390 insertions(+), 34 deletions(-)
+    - next: none — local commit made, not pushed
+  timestamp: 2026-08-29T17:39:18.772285+00:00
+- actor: claude-code
+  id: 01m179vaygh1padfs5dy20njtv
+  text: |
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 7b1a3e7), 2 files reviewed, 7 validators attempted, 0 failed, 0 skipped. counts: 0 findings, 0 confirmed, 0 refuted. Zero new findings; every prior checklist item is checked. The 4 `.kanban/` files were not reviewed, because `.reviewignore` excludes them.
+    - checks on the named sharp edges:
+      - Overload resolution: the reasoning holds. The new initializer takes a non-optional `any AgentSession`, which no `nil` can fill, and a closure literal cannot fill it either. `everySessionArgumentShapeResolvesWithNoTypeAnnotationAtTheCallSite` drives all three shapes with no type annotation, and it does not pass on compilation alone: it asserts `factory.receivedInstructions.count == 1` for the closure shape, `suppliedSession.forkCount == 1` for the instance shape, and `SelectionTierUnavailable` for the `nil` shape. Each assertion fails if a call site takes the other front door.
+      - The closure initializer is unchanged. The diff touches only its doc comment and its body, which is now one delegating call. The parameter list, the defaults, and the `session:` default of `Searcher.defaultSessionFactory` stay as they were.
+      - No initializer body is duplicated. One `private init(items:embedder:sessionSource:...)` holds the whole body, and both public initializers delegate to it.
+      - The shared-transcript note is correct and agrees with `Sources/FoundationModelsRanker/Selection/LanguageModelSessionSupport.swift`. That file says `fork()` gives back `self`, that the SDK has no branch primitive, that calls add turns to one transcript, and that a factory gives a fresh session per call. The new docs say the same and add no different claim. The statement that the tier forks the supplied session on each call and puts the prefix in the prompt agrees with `SelectionTier.cachedRootSession()`, `prompt(prefix:intent:)`, and `overBudgetSearch(intent:limit:)`.
+    - next: none — task moved to done
+  timestamp: 2026-08-29T17:42:31.120076+00:00
+- actor: claude-code
+  id: 01m179w3ztr8rnr9452cthv91x
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 2 files; a second public Searcher init taking `session: any AgentSession`, both public inits delegate to one private init, 5 new tests
+    - test: green — swift test, 268 passed, 0 failed, 1 documented gated skip; both FullMonty paths exit 0
+    - commit: 7b1a3e7 — 6 files changed
+    - review: clean — zero findings; the overload-resolution test was judged non-trivial, because each of its three assertions fails if a call site binds to the other overload
+    - next: none — task is in done
+
+    Overload resolution needed no tie-break: `any AgentSession` is not `ExpressibleByNilLiteral`, so `nil` cannot bind to the instance form, and a closure literal cannot bind to it either.
+  timestamp: 2026-08-29T17:42:56.762269+00:00
 depends_on:
 - 01M16WX5MP7ZGBX1GFYT6NJV14
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: 9b80
 title: Add a Searcher initializer that takes one AgentSession
 ---
 ## What

@@ -8,6 +8,32 @@ import Testing
     #expect(Bool(true))
 }
 
+/// The repository root, found from this file's own source path.
+///
+/// This file is `Tests/FoundationModelsRankerTests/PackageTests.swift`, so the
+/// root is the third directory above it. The path of the source file, and not
+/// the working directory, gives the root, so the test run can start anywhere.
+private let repositoryRootURL = URL(filePath: #filePath)
+    .deletingLastPathComponent()  // Tests/FoundationModelsRankerTests
+    .deletingLastPathComponent()  // Tests
+    .deletingLastPathComponent()  // the repository root
+
+/// The `Package.swift` manifest at the repository root.
+private let manifestURL = repositoryRootURL.appending(path: "Package.swift")
+
+/// Proves `Package.swift` declares no external package dependency.
+///
+/// This package builds against the macOS SDK alone. Each `.package(` call in
+/// the manifest adds a remote checkout, and two of the checkouts this package
+/// once declared were private repositories that only members of one
+/// organization could read. The test reads the manifest text, so a dependency
+/// cannot come back without notice.
+@Test func theManifestDeclaresNoPackageDependency() throws {
+    let manifest = try String(contentsOf: manifestURL, encoding: .utf8)
+
+    #expect(!manifest.contains(".package("))
+}
+
 /// Proves `TextEmbedding` is a complete seam on its own: a caller writes a
 /// conformer against the public protocol and hands it to `Searcher`, with no
 /// embedder adapter shipped by this package.

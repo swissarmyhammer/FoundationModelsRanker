@@ -96,16 +96,6 @@ Add the package to `Package.swift`:
 
 ## Development
 
-- **The mlx `Cmlx.bundle` "missing creator for mutated node" warning is known toolchain noise.**
-  This package does not cause the warning. The warning comes from the `mlx-swift` bundle target.
-  `FullMontyCore` pulls in `mlx-swift` through `mlx-swift-lm`. The warning appears on every
-  `swift build` and every `swift test`. The warning does not change when you change this package.
-  Do not try to fix the warning here. `FoundationModelsSkills` records the same warning for the
-  same reason.
-- **The `steel_attention.h` "constexpr if is a C++17 extension" warning also comes from
-  `mlx-swift`.** The warning comes from generated Metal C++ shader code under
-  `mlx-swift/Source/Cmlx/mlx-generated`. This package does not own that code. Do not try to fix
-  the warning here.
 - **The test `selectionTierWithABareLanguageModelSessionReachesGuidedGeneration` reports
   "skipped" under a plain `swift test`.** The test needs a real `SystemLanguageModel` session.
   The test runs only when you set the environment variable
