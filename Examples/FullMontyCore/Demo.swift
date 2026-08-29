@@ -72,6 +72,35 @@ public func runFullMontyDemo(
     return results
 }
 
+/// The one body that the two GPU-free retrieval paths share.
+///
+/// `--no-model` and `--embedder` both call
+/// `runFullMontyDemo(embedder:session:mode:limit:onDiagnostic:)` with
+/// `session: nil` and `mode: .retrieval`. Only the embedder is different.
+/// This helper takes the embedder as a parameter and gives the other
+/// arguments, so the two paths keep only one copy of that shape.
+///
+/// The default path does not use this helper. `runDefaultDemo` gives a
+/// session and `mode: .auto`, so its shape is different. A helper with a
+/// parameter for the session and a parameter for the mode would only be a
+/// second name for `runFullMontyDemo`.
+///
+/// - Parameters:
+///   - embedder: embeds `toolCatalog` and every query for the cosine signal,
+///     or `nil` for keyword-only retrieval.
+///   - onDiagnostic: called for every diagnostic `Searcher` emits.
+/// - Returns: one `FullMontyResult` per `demoQueries` entry, in order.
+/// - Throws: whatever `runFullMontyDemo(embedder:session:mode:limit:onDiagnostic:)`
+///   throws.
+private func runRetrievalDemo(
+    embedder: (any TextEmbedding)?,
+    onDiagnostic: @escaping @Sendable (RankDiagnostic) -> Void
+) async throws -> [FullMontyResult] {
+    try await runFullMontyDemo(
+        embedder: embedder, session: nil, mode: .retrieval, onDiagnostic: onDiagnostic
+    )
+}
+
 /// `--no-model`'s degraded, GPU-free path (plan.md §3a "the CI-safe path").
 ///
 /// No embedder (keyword-only BM25 + trigram retrieval), no selection
@@ -87,7 +116,7 @@ public func runFullMontyDemo(
 public func runNoModelDemo(
     onDiagnostic: @escaping @Sendable (RankDiagnostic) -> Void = { _ in }
 ) async throws -> [FullMontyResult] {
-    try await runFullMontyDemo(embedder: nil, session: nil, mode: .retrieval, onDiagnostic: onDiagnostic)
+    try await runRetrievalDemo(embedder: nil, onDiagnostic: onDiagnostic)
 }
 
 /// `--embedder`'s GPU-free path: retrieval with the cosine signal switched on.
@@ -110,9 +139,7 @@ public func runNoModelDemo(
 public func runEmbedderDemo(
     onDiagnostic: @escaping @Sendable (RankDiagnostic) -> Void = { _ in }
 ) async throws -> [FullMontyResult] {
-    try await runFullMontyDemo(
-        embedder: DemoEmbedder(), session: nil, mode: .retrieval, onDiagnostic: onDiagnostic
-    )
+    try await runRetrievalDemo(embedder: DemoEmbedder(), onDiagnostic: onDiagnostic)
 }
 
 /// The default path: keyword-only retrieval with real agent selection on the on-device system model.

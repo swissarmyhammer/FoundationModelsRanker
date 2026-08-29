@@ -65,6 +65,85 @@ comments:
 
     - next: `/review`.
   timestamp: 2026-08-29T14:56:48.549276+00:00
+- actor: claude-code
+  id: 01m170jrfw9nkgvyv4fyr0pz7m
+  text: |-
+    ### commit — changed
+    - evidence: `36406cd` feat(examples): add a GPU-free demo embedder to the FullMonty example — 13 files changed, 473 insertions, 21 deletions (local commit only, not pushed)
+    - next: review
+  timestamp: 2026-08-29T15:00:32.892626+00:00
+- actor: claude-code
+  id: 01m170v7km2tcn2mjs7kswray0
+  text: |
+    ### review — findings
+
+    - scope: `review sha HEAD~1..HEAD` (commit `36406cd`). The engine read the changed lines only.
+    - counts: 1 finding, 1 confirmed, 0 refuted, 7 validators attempted, 0 failed.
+    - evidence: `Examples/FullMontyCore/Demo.swift:110` — `duplication/duplication`.
+
+    Directed checks on `Examples/FullMontyCore/DemoEmbedder.swift`, both correct:
+
+    1. The determinism statement is true. `fnv1aHash(ofText:)` is a written-out FNV-1a hash of the UTF-8 bytes of the text, with the standard offset basis `0xCBF29CE484222325` and the standard prime `0x100000001B3`. The words `String.hashValue` and `Hasher` are in the doc comments only, where they tell why the code does not use them. No code in the `Examples` directory calls either one.
+
+    2. The expected vector in the test is a true independent check, not a record of the output of the code. An independent program that obeys the algorithm in the doc comment — lowercase the text, take each sliding 3-character window, add 1 at `FNV-1a(window) % dimension`, then make the length 1.0 — gives `[0.18257419, 0.0, 0.18257419, 0.18257419, 0.54772256, 0.54772256, 0.54772256, 0.0]` for `"commit changes"` at dimension 8. The checked-in values agree to the tolerance of the test (1e-6); the difference is only the precision of `Float` against `Double`.
+
+    The agreed deviation is stated honestly. The doc comment of `runEmbedderDemo` gives `mode: .retrieval` and `session: nil`, and tells why: cosine is a signal of the retrieval tier, so the tier that shows it needs no selection session. The `What` section of this card records the deviation and points to card ^g69hyyc.
+
+    - next: correct the finding, then run `/review` again.
+  timestamp: 2026-08-29T15:05:10.516647+00:00
+- actor: claude-code
+  id: 01m170w20w12hs32dsyjg0833v
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 5 files; DemoEmbedder.swift added (FNV-1a over UTF-8, unit-normalized), runEmbedderDemo added, --embedder path added, 9 tests added
+    - test: green — swift test, 252 passed, 0 failed, 1 documented gated skip; both FullMonty paths exit 0; two runs byte-identical
+    - commit: 36406cd — 13 files changed, 473 insertions, 21 deletions
+    - review: findings — Examples/FullMontyCore/Demo.swift:110, duplication between runEmbedderDemo and runNoModelDemo
+    - next: implement iteration 2 works the duplication finding
+
+    Both directed checks passed: the hash is a real FNV-1a with no `String.hashValue` or `Hasher` in code, and the reviewer reproduced the checked-in expected vector from an independent implementation.
+  timestamp: 2026-08-29T15:05:37.564250+00:00
+- actor: claude-code
+  id: 01m171dzdg70w84pmxk1w65emr
+  text: |
+    ### implement iteration 2 — the duplication finding
+
+    Finding: `Examples/FullMontyCore/Demo.swift:110` `duplication/duplication` — `runEmbedderDemo` and `runNoModelDemo` are nearly identical; they differ only in the embedder parameter (`nil` versus `DemoEmbedder()`).
+
+    Correction: added the file-private helper `runRetrievalDemo(embedder:onDiagnostic:)` to `Examples/FullMontyCore/Demo.swift`. The helper holds the one shape both GPU-free retrieval paths use — `session: nil` and `mode: .retrieval` — and takes the embedder as a parameter. `runNoModelDemo` now calls it with `nil`; `runEmbedderDemo` calls it with `DemoEmbedder()`. Each public function keeps its name, its signature, and its doc comment.
+
+    The whole file was examined for the same cause, not only the line in the finding:
+
+    - `runDefaultDemo` does NOT route through the helper, and must not. It gives `session: Searcher.defaultSessionFactory` and `mode: .auto`, so two arguments are different, not one. A helper with a parameter for the session and a parameter for the mode would only be a second name for `runFullMontyDemo`. The doc comment of the helper records this reason, so a later reader does not repeat the question.
+    - No third copy of the retrieval call shape is in the file.
+
+    The two public functions are now one forwarding line each. The `duplication` validator gives a carve-out for this shape: "If the shared logic is already extracted and only the forwarding line repeats, the duplication is resolved — do not flag the shim." The `reuse` validator adds: "When the shared helper stands, the parameterization is done and the finding is answered."
+
+    Rules read before the edit: `dump validators` on `Demo.swift` gave 7 validators and 55 rules (`code-hygiene`, `code-security`, `completeness`, `duplication`, `reuse`, `swift`, `test-integrity`). The rules that bear on this edit and how each is met:
+
+    - `duplication/duplication` — the finding itself; the shared function is extracted and the difference is a parameter.
+    - `swift/access-control` — the helper is `private` at file scope, which reaches both callers because they are in the same file. It exposes no lower-access type: its parameter and return types are the public `TextEmbedding`, `RankDiagnostic`, and `FullMontyResult`. No caller is `@inlinable`, so no `@usableFromInline` is needed.
+    - `code-hygiene/missing-docs-swift` — reads `open` and `public` only, so the private helper needs no doc comment. One was written anyway, because it records why `runDefaultDemo` stays outside.
+    - `code-hygiene/no-commented-code` and `dead-code` — no old body was left as a comment, and no path lost its caller.
+    - `completeness/public-output-contract` — the public surface is unchanged. No name, signature, or doc comment moved, so `Examples/FullMonty/main.swift` and `Tests/FoundationModelsRankerTests/ExamplesSmokeTests.swift` needed no edit and got none.
+    - `code-hygiene/magic-numbers-swift` — no literal moved to a call argument.
+
+    No test was added: this is a behavior-preserving extraction, which is the REFACTOR step of the `/tdd` cycle. The 9 tests written in iteration 1 already drive both public paths, and they stayed green through the change.
+
+    Measured after the change:
+
+    - `swift build` — exit 0. The only warning is the pre-existing `mlx-swift_Cmlx.bundle` line, which card ^2q0p8gr removes with the MLX dependency.
+    - `swift test` — 252 tests in 21 suites passed, 0 failures, 0 warnings, 0 errors.
+    - `swift run FullMonty --embedder` — exit 0, 0 `embeddingUnavailable` lines. The top match and cosine for each query are the same numbers iteration 1 measured before the refactor: `grep` 0.722, `commit` 0.638, `branch` 0.439, `stash` 0.849. The extraction changed no output.
+    - `swift run FullMonty --no-model` — exit 0, unchanged.
+  timestamp: 2026-08-29T15:15:24.720950+00:00
+- actor: claude-code
+  id: 01m171e3s679ky67h3az1n56sf
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — `Examples/FullMontyCore/Demo.swift`. Added the file-private helper `runRetrievalDemo(embedder:onDiagnostic:)`; `runNoModelDemo` and `runEmbedderDemo` now forward to it. `swift build` exit 0; `swift test` 252 tests in 21 suites passed, 0 failures; both `FullMonty` GPU-free paths exit 0 with the same output as before.
+    - next: `/review`
+  timestamp: 2026-08-29T15:15:29.190772+00:00
 depends_on:
 - 01M16WVSKBESEYHA6H320D9ZDP
 position_column: doing
@@ -101,3 +180,12 @@ Files to change:
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-08-29 10:01)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 5 file(s) reviewed, 8 not reviewed.
+
+> 8 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 8 file(s)
+
+- [x] `Examples/FullMontyCore/Demo.swift:110` `duplication/duplication` — runEmbedderDemo and runNoModelDemo are nearly identical — they differ only in the embedder parameter (nil versus DemoEmbedder()). Extract one shared function with an embedder argument, to avoid keeping two implementations in sync. Extract a private helper function (for example, runRetrieval(embedder:onDiagnostic:)) that takes the embedder as a parameter and calls runFullMontyDemo. Call this helper from both runNoModelDemo (passing nil) and runEmbedderDemo (passing DemoEmbedder()).
