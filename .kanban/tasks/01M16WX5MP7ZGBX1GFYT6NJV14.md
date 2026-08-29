@@ -24,10 +24,40 @@ comments:
     - evidence: `swift build` clean (only the documented mlx-swift Cmlx.bundle warning). `swift test` — 263 tests in 21 suites passed, 0 failed. Only skip is the documented `selectionTierWithABareLanguageModelSessionReachesGuidedGeneration` (gated test). All 8 required tests found and passing: `theSessionInitializerStoresTheSuppliedSession`, `theModelInitializerWrapsItsFactoryInTheFactorySource`, `theSessionInitializerClampsNegativeLimitsToZero`, `aFactorySessionIsPromptedWithTheIntentAlone`, `aSuppliedSessionIsPromptedWithThePrefixAboveTheIntent`, `aSuppliedSessionIsForkedOncePerSearchAndNeverRebuilt`, `overBudgetFactorySessionIsPromptedWithTheIntentAlone`, `overBudgetSuppliedSessionIsPromptedWithTheTopMCandidatesOnly`. Checked touched files (`SelectionConfig.swift`, `SelectionTier.swift`, `LanguageModelSessionSupport.swift`, `ScriptedAgentSession.swift`) for stray TODO/FIXME markers and dangling symbol references — none found. `swift run FullMonty --no-model` exit 0. `swift run FullMonty --embedder` exit 0 — both logs show only the documented mlx warning.
     - next: ready for review.
   timestamp: 2026-08-29T17:18:23.612077+00:00
+- actor: claude-code
+  id: 01m178gss41erbnqzytqb8zbb1
+  text: |-
+    ### commit — changed
+    - evidence: 18b3c2f feat(selection): let a caller supply one session to SelectionConfig — 12 files changed, 391 insertions(+), 41 deletions(-)
+    - next: push when ready
+  timestamp: 2026-08-29T17:19:17.284073+00:00
+- actor: claude-code
+  id: 01m178sksmw5r5ksnf8h9jbx5z
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 18b3c2f). 7 validators ran, 0 failed. Counts: 0 findings, 0 confirmed, 0 refuted. 8 files reviewed; 4 `.kanban/` files excluded by `.reviewignore`. No prior `## Review Findings` section on this card.
+    - checks: `SelectionConfig.init(model:preamble:capacityCharacterLimit:candidateLimit:)` keeps its exact signature, its defaults, and its clamps; it wraps the closure in `.factory` through the shared private init, so no caller changes behavior. No code reads `config.model` now. With `.session`, `prompt(prefix:intent:)` gives `<prefix>\n\n# Task\n\n<intent>`, and the prefix is the same text that `.factory` puts in the instructions: `assembledPrefix` on the cached-root path, the per-call `prefix` on the over-budget path. Both paths make the prompt with the one helper `prompt(prefix:intent:)`; there is no second copy of the assembly. `cachedRootSession()` gives back the supplied session as it is and never replaces it; `search(intent:limit:)` forks it one time for each call, and `overBudgetSearch(intent:limit:)` forks the supplied session directly.
+    - note: `LanguageModelSession.fork()` gives back `self`. The file `LanguageModelSessionSupport.swift` already writes down this tradeoff and tells the caller what to do instead. The engine found no fault here.
+    - next: done.
+  timestamp: 2026-08-29T17:24:06.068121+00:00
+- actor: claude-code
+  id: 01m178tmps5et2np1nz1fean2k
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 8 files; SelectionSessionSource added with .factory and .session, one shared prompt(prefix:intent:) helper, 8 new tests. The implement agent was terminated mid-run after it hung on an LSP `diagnostics` call, so it never wrote its own record. Its edits were complete on disk.
+    - test: green — independently re-verified after the kill: swift test 263 passed, 0 failed, 1 documented gated skip; both FullMonty paths exit 0; no half-edited file
+    - commit: 18b3c2f — 12 files changed
+    - review: clean — zero findings; all four directed checks passed, including that the existing init keeps its exact signature and that .session really delivers the prefix
+    - next: none — task is in done
+
+    The description checkboxes stay unchecked because the implement agent was killed before it could mark them. The work itself is verified by the test and review steps above.
+
+    Tooling note for later cards: do not call the `diagnostics` MCP op in this workspace. sourcekit-lsp is not installed here, and the call hangs. Use `swift build` output instead.
+  timestamp: 2026-08-29T17:24:39.769994+00:00
 depends_on:
 - 01M16WTDBSFXJKRSDK44KX83SX
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: 9a80
 title: Let a caller supply one AgentSession instead of a session factory
 ---
 ## What

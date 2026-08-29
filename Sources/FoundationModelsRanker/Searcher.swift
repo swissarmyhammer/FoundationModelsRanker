@@ -36,12 +36,26 @@ import FoundationModels
 /// Every knob but `items` is optional: `embedder:` adds the cosine signal
 /// (every item's `text` is embedded once, here, at `init`); `session:`
 /// swaps the selection model -- defaults to the on-device system model, and
-/// is never hardcoded beyond that default, since any closure returning an
-/// `AgentSession` (a `LanguageModelSession` factory, or a factory for a
-/// conformer the caller writes) plugs in identically;
-/// `weights:`, `preamble:`, `candidateLimit:` tune the retrieval and
-/// selection tiers directly; `mode:` picks which tier answers
-/// `search(_:limit:)`.
+/// is never hardcoded beyond that default; `weights:`, `preamble:`,
+/// `candidateLimit:` tune the retrieval and selection tiers directly;
+/// `mode:` picks which tier answers `search(_:limit:)`.
+///
+/// `session:` has two front doors, one for each kind of caller. A caller
+/// that can make a session for each prefix gives a **factory closure**
+/// (`@Sendable (String) -> any AgentSession`): a `LanguageModelSession`
+/// factory, or a factory for a conformer the caller writes. The assembled
+/// candidate prefix becomes each new session's instructions. A caller that
+/// already holds **one live session** gives that session itself
+/// (`any AgentSession`). A live session takes no new instructions, so the
+/// prompt carries the prefix instead. The model sees the same prefix
+/// either way.
+///
+/// The instance front door shares one transcript across all calls.
+/// `LanguageModelSession.fork()` gives back `self`, because the SDK has no
+/// branch primitive (`Selection/LanguageModelSessionSupport.swift` records
+/// why), so each call adds turns to the same session instead of branching
+/// into an isolated child, and many calls make the context grow. Use the
+/// factory front door when each call must get a fresh context.
 ///
 /// Degradation is graceful, never silent (plan.md §3a): no `embedder` (or
 /// a query embed that itself fails) drops straight to keyword-only
@@ -113,14 +127,16 @@ public struct Searcher: Sendable {
     ///     otherwise have used it (whenever `weights.cosine > 0.0`; a
     ///     caller who sets `weights.cosine` to `0.0` has already opted out
     ///     of the signal, so that combination reports nothing).
-    ///   - session: creates a selection session seeded with the assembled
-    ///     candidate prefix -- the seam that plugs in any
-    ///     `LanguageModelSession` model, or any other `AgentSession`
-    ///     conformer the caller writes -- and is
-    ///     never hardcoded. Defaults to the on-device system model; pass
-    ///     `nil` explicitly to leave selection unavailable (`mode:
-    ///     .selection` then throws `SelectionTierUnavailable`; `.auto`
-    ///     degrades to retrieval).
+    ///   - session: makes a selection session for each assembled candidate
+    ///     prefix -- the seam that plugs in any `LanguageModelSession`
+    ///     model, or any other `AgentSession` conformer the caller writes --
+    ///     and is never hardcoded. The prefix becomes each new session's
+    ///     instructions, so each call can get a fresh context. Defaults to
+    ///     the on-device system model; pass `nil` explicitly to leave
+    ///     selection unavailable (`mode: .selection` then throws
+    ///     `SelectionTierUnavailable`; `.auto` degrades to retrieval). A
+    ///     caller that already holds one live session gives that session
+    ///     to the initializer that takes an `any AgentSession` instead.
     ///   - weights: the per-signal fusion weights for retrieval. Defaults
     ///     to `1.0` for every signal.
     ///   - preamble: the selection guidance prepended to the assembled
@@ -143,6 +159,116 @@ public struct Searcher: Sendable {
         mode: Mode = .auto,
         onDiagnostic: @escaping @Sendable (RankDiagnostic) -> Void = { _ in }
     ) async throws {
+        try await self.init(
+            items: items,
+            embedder: embedder,
+            sessionSource: session.map { SelectionSessionSource.factory($0) },
+            weights: weights,
+            preamble: preamble,
+            candidateLimit: candidateLimit,
+            mode: mode,
+            onDiagnostic: onDiagnostic
+        )
+    }
+
+    /// Builds a searcher over `items` that asks one live session for every
+    /// selection.
+    ///
+    /// The front door for a caller that already holds a session -- a
+    /// `LanguageModelSession`, or any other `AgentSession` conformer -- and
+    /// wants no factory closure around it. A live session takes no new
+    /// instructions, so the selection tier forks this session for each call
+    /// and carries the assembled candidate prefix in the prompt.
+    ///
+    /// This form shares one transcript across all calls when the session
+    /// cannot really branch. `LanguageModelSession.fork()` gives back
+    /// `self`, because the SDK has no branch primitive
+    /// (`Selection/LanguageModelSessionSupport.swift` records why), so each
+    /// call adds turns to the same session, and many calls make the context
+    /// grow. Give a factory closure to the initializer above when each call
+    /// must get a fresh context.
+    ///
+    /// - Parameters:
+    ///   - items: the things to search: at minimum an id and the text that
+    ///     describes it (`SearchItem`, or any `Searchable` conformer).
+    ///     Duplicate ids keep the first occurrence; later ones are dropped.
+    ///   - embedder: embeds every item's `text` once, here, at `init`, and
+    ///     the query at every `search(_:limit:)` call -- adds the cosine
+    ///     signal to retrieval. `nil` (the default) skips cosine entirely
+    ///     and reports `.embeddingUnavailable` on every search that would
+    ///     otherwise have used it (whenever `weights.cosine > 0.0`; a
+    ///     caller who sets `weights.cosine` to `0.0` has already opted out
+    ///     of the signal, so that combination reports nothing).
+    ///   - session: the live session every selection call forks a child
+    ///     from -- the seam that takes a `LanguageModelSession` the caller
+    ///     already holds, or any other `AgentSession` conformer, and is
+    ///     never hardcoded. All calls share this session's transcript when
+    ///     its `fork()` gives back `self`.
+    ///   - weights: the per-signal fusion weights for retrieval. Defaults
+    ///     to `1.0` for every signal.
+    ///   - preamble: the selection guidance prepended to the assembled
+    ///     prefix. Defaults to `.selectionDefault`.
+    ///   - candidateLimit: how many top-ranked candidates the over-budget
+    ///     selection path seeds a one-off session with. Defaults to
+    ///     `SelectionConfig.defaultCandidateLimit`.
+    ///   - mode: which tier `search(_:limit:)` uses. Defaults to `.auto`.
+    ///   - onDiagnostic: called for every diagnostic this facade or its
+    ///     selection tier emits. Defaults to doing nothing.
+    /// - Throws: whatever `embedder.embed(_:)` throws while embedding
+    ///   `items` at `init`.
+    public init<Item: Searchable>(
+        _ items: [Item],
+        embedder: (any TextEmbedding)? = nil,
+        session: any AgentSession,
+        weights: SignalWeights = SignalWeights(),
+        preamble: String = .selectionDefault,
+        candidateLimit: Int = SelectionConfig.defaultCandidateLimit,
+        mode: Mode = .auto,
+        onDiagnostic: @escaping @Sendable (RankDiagnostic) -> Void = { _ in }
+    ) async throws {
+        try await self.init(
+            items: items,
+            embedder: embedder,
+            sessionSource: .session(session),
+            weights: weights,
+            preamble: preamble,
+            candidateLimit: candidateLimit,
+            mode: mode,
+            onDiagnostic: onDiagnostic
+        )
+    }
+
+    /// Builds a searcher from an already-chosen session source -- the one
+    /// place both public initializers do the work, so the two front doors
+    /// cannot drift apart.
+    ///
+    /// - Parameters:
+    ///   - items: the things to search.
+    ///   - embedder: embeds every item's `text` here, at `init`, and the
+    ///     query at every `search(_:limit:)` call, or `nil` for
+    ///     keyword-only retrieval.
+    ///   - sessionSource: where the selection tier gets its sessions, or
+    ///     `nil` to leave selection unavailable.
+    ///   - weights: the per-signal fusion weights for retrieval.
+    ///   - preamble: the selection guidance prepended to the assembled
+    ///     prefix.
+    ///   - candidateLimit: how many top-ranked candidates the over-budget
+    ///     selection path seeds a one-off session with.
+    ///   - mode: which tier `search(_:limit:)` uses.
+    ///   - onDiagnostic: called for every diagnostic this facade or its
+    ///     selection tier emits.
+    /// - Throws: whatever `embedder.embed(_:)` throws while embedding
+    ///   `items` at `init`.
+    private init<Item: Searchable>(
+        items: [Item],
+        embedder: (any TextEmbedding)?,
+        sessionSource: SelectionSessionSource?,
+        weights: SignalWeights,
+        preamble: String,
+        candidateLimit: Int,
+        mode: Mode,
+        onDiagnostic: @escaping @Sendable (RankDiagnostic) -> Void
+    ) async throws {
         let corpus = SearchCorpus(items: items)
         let itemEmbeddings: [[Float]]?
         if let embedder {
@@ -161,20 +287,44 @@ public struct Searcher: Sendable {
         self.engine = engine
         self.mode = mode
 
-        if let session {
-            let config = SelectionConfig(
-                model: session,
-                preamble: preamble,
-                candidateLimit: candidateLimit
-            )
+        if let sessionSource {
             self.selectionTier = SelectionTier(
                 catalog: corpus,
-                config: config,
+                config: Self.selectionConfig(
+                    sessionSource: sessionSource,
+                    preamble: preamble,
+                    candidateLimit: candidateLimit
+                ),
                 onDiagnostic: onDiagnostic,
                 retrievalRanking: engine.fullOrdering
             )
         } else {
             self.selectionTier = nil
+        }
+    }
+
+    /// Makes the selection tier's configuration for `sessionSource`.
+    ///
+    /// `SelectionConfig`'s own source-taking initializer is private, so this
+    /// picks the public initializer that stores the matching source.
+    ///
+    /// - Parameters:
+    ///   - sessionSource: where the selection tier gets its sessions.
+    ///   - preamble: the selection guidance prepended to the assembled
+    ///     prefix.
+    ///   - candidateLimit: how many top-ranked candidates the over-budget
+    ///     selection path seeds a one-off session with.
+    /// - Returns: the configuration that carries `sessionSource`.
+    private static func selectionConfig(
+        sessionSource: SelectionSessionSource,
+        preamble: String,
+        candidateLimit: Int
+    ) -> SelectionConfig {
+        switch sessionSource {
+        case .factory(let makeSession):
+            return SelectionConfig(model: makeSession, preamble: preamble, candidateLimit: candidateLimit)
+        case .session(let session):
+            return SelectionConfig(session: session, preamble: preamble, candidateLimit: candidateLimit)
         }
     }
 

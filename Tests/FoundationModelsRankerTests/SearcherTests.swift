@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModels
 import Testing
 
 @testable import FoundationModelsRanker
@@ -12,7 +13,9 @@ import Testing
 /// (`Support/ScriptedAgentSession.swift`) and `FakeEmbedder`
 /// (`Support/FakeEmbedder.swift`) -- zero GPU, no live system model, no
 /// Router dependency, matching every other selection-tier suite in this
-/// target.
+/// target. One test makes a real `LanguageModelSession` to show the
+/// instance front door takes it, but answers in `.retrieval` mode, so no
+/// test here runs inference.
 struct SearcherTests {
     // MARK: - Fixtures
 
@@ -248,6 +251,120 @@ struct SearcherTests {
         // nothing.
         #expect(first.score > 0.0)
         #expect(first.signals != nil)
+    }
+
+    // MARK: - The `session:` front doors: one live session, or a factory
+
+    @Test
+    func aSuppliedSessionAnswersSelectionAndCarriesTheRealFusedScoreAndSignals() async throws {
+        // The instance front door: a caller that already holds a session
+        // gives it directly, with no factory closure around it.
+        let session = ScriptedAgentSession([#"{"ids":["glob"]}"#])
+        let searcher = try await Searcher(Self.toolItems, session: session, mode: .selection)
+
+        let matches = try await searcher.search("find files by name", limit: 5)
+
+        #expect(matches.map(\.id) == ["glob"])
+        #expect(matches.first?.block == "Find files by name pattern, sorted by mtime")
+        // The supplied session answered: a `.session` source forks the very
+        // session the caller gave, and makes no session of its own.
+        #expect(session.forkCount == 1)
+        // The pick carries the same real fused score and per-signal
+        // breakdown `.retrieval` mode reports for it -- never a sentinel.
+        let retrievalSearcher = try await Searcher(Self.toolItems, session: nil, mode: .retrieval)
+        let retrievalMatches = try await retrievalSearcher.search("find files by name", limit: 5)
+        let expected = try #require(retrievalMatches.first { $0.id == "glob" })
+        #expect(matches.first?.score == expected.score)
+        #expect(matches.first?.signals == expected.signals)
+    }
+
+    @Test
+    func aSuppliedSessionGetsTheAssembledPrefixInThePromptBecauseItTakesNoInstructions() async throws {
+        // A live session cannot take new instructions, so the prompt must
+        // carry the catalog. Without it the model sees no candidate and can
+        // return no id.
+        let session = ScriptedAgentSession([#"{"ids":["glob"]}"#])
+        let searcher = try await Searcher(Self.toolItems, session: session, mode: .selection)
+
+        _ = try await searcher.search("find files by name", limit: 5)
+
+        let prompt = try #require(session.receivedPrompts.first)
+        #expect(prompt.contains("# Candidates"))
+        #expect(prompt.contains("## glob"))
+        #expect(prompt.contains("find files by name"))
+    }
+
+    @Test
+    func everySessionArgumentShapeResolvesWithNoTypeAnnotationAtTheCallSite() async throws {
+        // One contract, three call shapes, each written the way a caller
+        // writes it: with no type annotation. A closure takes the factory
+        // front door, because a function type conforms to no protocol. A
+        // live session takes the instance front door, because a session is
+        // no function. `nil` stays on the factory front door, because the
+        // instance front door takes a plain `any AgentSession`, which no
+        // `nil` can fill. Each shape is here because only the three
+        // together show the overloads stay unambiguous.
+        let factory = RecordingSessionFactory(responses: [#"{"ids":["grep"]}"#])
+        let closureSearcher = try await Searcher(
+            Self.toolItems,
+            session: { instructions in factory.makeSession(instructions: instructions) },
+            mode: .selection
+        )
+        let suppliedSession = ScriptedAgentSession([#"{"ids":["grep"]}"#])
+        let sessionSearcher = try await Searcher(Self.toolItems, session: suppliedSession, mode: .selection)
+        let nilSearcher = try await Searcher(Self.toolItems, session: nil, mode: .selection)
+
+        _ = try await closureSearcher.search("anything", limit: 5)
+        _ = try await sessionSearcher.search("anything", limit: 5)
+
+        // Only a `.factory` source calls the factory.
+        #expect(factory.receivedInstructions.count == 1)
+        // Only a `.session` source forks the session the caller supplied.
+        #expect(suppliedSession.forkCount == 1)
+        // Only the factory front door takes `nil`, which leaves selection
+        // unavailable.
+        await #expect(throws: SelectionTierUnavailable.self) {
+            try await nilSearcher.search("anything", limit: 5)
+        }
+    }
+
+    @Test
+    func theInstanceFormAndTheFactoryFormGiveTheSameMatchesForTheSameScriptedAnswer() async throws {
+        // Two front doors, one behavior: the same catalog and the same
+        // answer must give the same matches, ids, blocks, scores, and
+        // signals included.
+        let answer = #"{"ids":["watch"]}"#
+        let factorySearcher = try await Searcher(
+            Self.toolItems,
+            session: { _ in ScriptedAgentSession([answer]) },
+            mode: .selection
+        )
+        let sessionSearcher = try await Searcher(
+            Self.toolItems,
+            session: ScriptedAgentSession([answer]),
+            mode: .selection
+        )
+
+        let factoryMatches = try await factorySearcher.search("find files by name", limit: 5)
+        let sessionMatches = try await sessionSearcher.search("find files by name", limit: 5)
+
+        #expect(factoryMatches.map(\.id) == ["watch"])
+        #expect(factoryMatches == sessionMatches)
+    }
+
+    @Test
+    func aLiveLanguageModelSessionGoesStraightInAsTheSessionArgument() async throws {
+        // The shape this front door exists for: a caller that already holds
+        // a `LanguageModelSession` gives it, with no factory closure and no
+        // type annotation. `.retrieval` mode answers with no model call, so
+        // this test runs no inference.
+        let session = LanguageModelSession(model: SystemLanguageModel.default, instructions: "selection guidance")
+        let searcher = try await Searcher(Self.toolItems, session: session, mode: .retrieval)
+
+        let matches = try await searcher.search("search file contents with a regular expression", limit: 5)
+
+        #expect(matches.first?.id == "grep")
+        #expect(matches.first?.block == "Search file contents with regular expressions")
     }
 
     // MARK: - Degradation: no embedder, reported never silently
