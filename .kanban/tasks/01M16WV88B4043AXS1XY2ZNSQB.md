@@ -71,8 +71,34 @@ comments:
 
     Also recorded: the `implement` step added two `private` adapter structs to `Examples/FullMontyCore/LiveRouter.swift` to keep the example target compiling. Card `^20d9zdp` deletes that whole file. The structs must stay `private` until then.
   timestamp: 2026-08-29T14:15:27.981287+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m16y5f9npa1de3s81scbnww3
+  text: |-
+    ### commit — changed
+    - evidence: 4b5c8bb — 27 files changed, 701 insertions(+), 176 deletions(-)
+    - next: push is a separate step, not done here.
+  timestamp: 2026-08-29T14:18:20.341528+00:00
+- actor: claude-code
+  id: 01m16ye7kjnk93nd2natxqez0e
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 4b5c8bb). 9 files reviewed. counts: findings 1, confirmed 1, refuted 0, attempted 7, failed 0. Zero findings in the scope of this card.
+    - dropped finding: `Examples/FullMontyCore/LiveRouter.swift:162` `code-hygiene/dead-code-swift` — "var.instance `dimension` is unused." The written scope note on this card, and the orchestrator comment of 2026-08-29, put the two `private` adapter structs in `LiveRouter.swift` out of the review scope. Line 162 is `var dimension: Int { routedEmbedder.dimension }` in `private struct RoutedEmbedderTextEmbedding`. It is a necessary member of the `TextEmbedding` protocol. Card `^20d9zdp` deletes the full file. A written rule releases this finding, thus it is not recorded as work.
+    - also noted: three tool rules could not read `Sources/FoundationModelsRanker/RoutedEmbedderAdapter.swift`, because this commit deletes that file. This is the correct result.
+    - next: no work is open from the review. The card moves to done.
+  timestamp: 2026-08-29T14:23:07.378055+00:00
+- actor: claude-code
+  id: 01m16yf0p7e7y6cydqwg2cawmt
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: stuck → resolved by orchestrator card correction (the repo-wide grep criterion was a planning defect; it is now scoped to what this card owns)
+    - test: green — swift test, 241 passed, 0 failed, 1 documented gated skip
+    - commit: 4b5c8bb — 27 files changed, 701 insertions, 176 deletions
+    - review: clean — zero findings in scope; the one dead-code hit was on the temporary private struct that card ^20d9zdp deletes
+    - next: none — task is in done
+  timestamp: 2026-08-29T14:23:33.063294+00:00
+position_column: done
+position_ordinal: '9480'
 title: Delete RoutedAgentSession and RoutedEmbedderAdapter
 ---
 ## What

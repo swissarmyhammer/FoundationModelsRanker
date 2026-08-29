@@ -1,3 +1,4 @@
+import Foundation
 import FullMontyCore
 import FoundationModelsRanker
 import Testing
@@ -12,10 +13,9 @@ import Testing
 /// every GPU-free path: `--no-model` (`runNoModelDemo`) and the selection
 /// tier driven by a scripted `AgentSession` fake
 /// (`Support/ScriptedAgentSession.swift`, already shared by `SearcherTests`
-/// and the selection-tier suites). `FullMontyCore`'s default (on-device
-/// system model) and gated (`FOUNDATIONMODELSRANKER_INTEGRATION_TESTS`, live Router) paths
-/// touch a real model/network/GPU and are exercised only by `swift run
-/// FullMonty` locally, never here.
+/// and the selection-tier suites). `FullMontyCore`'s default path needs the
+/// on-device system model, so only `swift run FullMonty` exercises it
+/// locally, never these tests.
 @Suite("FullMonty example smoke tests")
 struct ExamplesSmokeTests {
     // MARK: - Fixtures
@@ -121,5 +121,26 @@ struct ExamplesSmokeTests {
         for result in results {
             #expect(result.matches.map(\.id) == ["stash"])
         }
+    }
+
+    // MARK: - The opt-in gate for the suites that need a live model
+
+    @Test("The opt-in environment variable keeps its name, which the gated suites read")
+    func theOptInEnvironmentVariableKeepsItsName() {
+        #expect(foundationModelsRankerIntegrationEnvVar == "FOUNDATIONMODELSRANKER_INTEGRATION_TESTS")
+    }
+
+    // An ordinary run leaves the opt-in variable unset, so the gate must read
+    // `false`. A gate that read `true` by default would start the live-model
+    // suites on every machine. `#require` states that condition, so a run with
+    // the variable set says why it failed instead of failing without a reason.
+    @Test("The gate is off when the opt-in environment variable is absent")
+    func theGateIsOffWhenTheOptInEnvironmentVariableIsAbsent() throws {
+        try #require(
+            ProcessInfo.processInfo.environment[foundationModelsRankerIntegrationEnvVar] == nil,
+            "This test states the default run. Clear \(foundationModelsRankerIntegrationEnvVar) and run the tests again."
+        )
+
+        #expect(isFoundationModelsRankerIntegrationEnabled == false)
     }
 }

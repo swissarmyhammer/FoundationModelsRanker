@@ -11,16 +11,33 @@
 import Foundation
 import FoundationModelsRanker
 
+// MARK: - The opt-in gate for the tests that need a live model
+
+/// The name of the environment variable that enables the gated tests.
+///
+/// Some tests need a live Apple Intelligence model. Those tests run only when
+/// this variable is set. This mirrors FoundationModelsMetadataRegistry's own
+/// `METADATA_REGISTRY_INTEGRATION_TESTS` convention. Nothing sets the variable
+/// by default, so a usual test run needs no model.
+public let foundationModelsRankerIntegrationEnvVar = "FOUNDATIONMODELSRANKER_INTEGRATION_TESTS"
+
+/// Whether the gated tests are enabled for this run.
+public var isFoundationModelsRankerIntegrationEnabled: Bool {
+    ProcessInfo.processInfo.environment[foundationModelsRankerIntegrationEnvVar] != nil
+}
+
+// MARK: - The demo paths
+
 /// One `demoQueries` entry's result: the query itself alongside its ranked or selected matches.
 public typealias FullMontyResult = (query: String, matches: [SelectionMatch])
 
 /// Runs all demo queries against the catalog through a Searcher built from provided ingredients.
 ///
 /// Runs every `demoQueries` entry against `toolCatalog` through a `Searcher`
-/// built from the given ingredients — the shared plumbing every one of
-/// `FullMonty`'s three paths (`--no-model`, the default on-device-system-
-/// model path, and the `FOUNDATIONMODELSRANKER_INTEGRATION_TESTS`-gated live-Router path)
-/// drives through, differing only in which `embedder`/`session` they supply.
+/// built from the given ingredients — the shared plumbing both of
+/// `FullMonty`'s paths (`--no-model`, and the default on-device-system-model
+/// path) drive through. The two paths differ only in the `embedder` and the
+/// `session` they supply.
 ///
 /// - Parameters:
 ///   - embedder: embeds `toolCatalog` and every query for the cosine signal,
@@ -75,10 +92,9 @@ public func runNoModelDemo(
 
 /// The default path: keyword-only retrieval with real agent selection on the on-device system model.
 ///
-/// Run with no flags and no gated env var set: no embedder (still
-/// keyword-only retrieval signal-wise — a live embedder needs the gated
-/// Router path), but `session: Searcher.defaultSessionFactory` so `mode:
-/// .auto` drives real selection on the on-device system model.
+/// Run with no flags: no embedder, so retrieval stays keyword-only. But
+/// `session: Searcher.defaultSessionFactory` makes `mode: .auto` drive real
+/// selection on the on-device system model.
 ///
 /// Explicitly passes `Searcher.defaultSessionFactory` (rather than omitting
 /// `session:` and letting `Searcher.init`'s own default argument supply it)
