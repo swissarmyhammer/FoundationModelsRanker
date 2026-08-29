@@ -6,21 +6,14 @@
 // FoundationModels model -- `.default`, an adapter-loaded model, or a future
 // preset -- plugs into `AgentSession` with no external dependency, so a
 // `LanguageModelSession(model:instructions:)` call type-checks anywhere an
-// `AgentSession` is expected. Concretely, that's two call shapes:
-//   - `SelectionConfig.model`'s current seam, `@Sendable (String, Grammar) ->
-//     any AgentSession` -- a plain `LanguageModelSession` factory ignores the
-//     grammar argument (it relies on its own native guided generation
-//     instead, via `respond(to:generating:)` below), e.g.
-//     `{ instructions, _ in LanguageModelSession(model: .default,
-//     instructions: instructions) }`.
-//   - the simpler `(String) -> any AgentSession` seam plan.md §3a's
-//     `Searcher` facade documents (`session:`) -- e.g.
-//     `{ instructions in LanguageModelSession(model: .default, instructions:
-//     instructions) }` -- for whenever that facade lands (plan.md §6 phase 3,
-//     tracked separately) and adapts a one-arg factory into
-//     `SelectionConfig.model`'s two-arg shape.
-// Either way, the selection model is never hardcoded (plan.md §2 "neutral
-// naming" / §3a).
+// `AgentSession` is expected. Both seams take the same shape,
+// `@Sendable (String) -> any AgentSession` -- `SelectionConfig.model` and the
+// `Searcher` facade's `session:` -- so one closure serves both, e.g.
+// `{ instructions in LanguageModelSession(model: .default, instructions:
+// instructions) }`. Such a factory applies no grammar of its own: it relies
+// on the session's own native guided generation, through
+// `respond(to:generating:)` below. The selection model is never hardcoded
+// (plan.md §2 "neutral naming" / §3a).
 //
 // SDK verification (plan.md §7 risk -- "the .fast/.default model spellings
 // ... must be verified against the macOS 27 SDK in phase 3"): the installed

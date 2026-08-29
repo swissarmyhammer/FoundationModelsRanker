@@ -43,16 +43,15 @@ import FoundationModelsRouter
 /// and reported via `.unknownSelectedId`, exactly like an id absent from
 /// the catalog altogether.
 ///
-/// **IDs only, grammar-enforced** (plan.md §6, decision #4): the guided
-/// output is `Selection { ids: [String] }`; `idEnumGrammar(ids:)` derives the
-/// xgrammar JSON Schema constraining `ids` to the current candidate id
-/// set — the full catalog under budget, the top-M ranked ids over budget —
-/// so the model is structurally incapable of inventing one — the same
-/// pattern as `Librarian.grammarSchemaSource()`, with an added `enum`
-/// constraint injected into the `ids` array's `items` subschema. Returned ids
-/// map back through the catalog to verbatim `SelectionMatch`es; an id outside
-/// the current candidate set — structurally unreachable given the grammar,
-/// but defended against anyway — is filtered and reported via
+/// **IDs only** (plan.md §6, decision #4): the guided output is
+/// `Selection { ids: [String] }`. The assembled prefix shows every candidate
+/// id as a markdown heading, so the model can read the ids it may return.
+/// This tier applies no grammar of its own: a caller that wants guided
+/// generation applies one when it makes the session, and
+/// `idEnumGrammar(ids:)` gives that caller the id set — the whole catalog
+/// under budget, the top-M ranked ids over budget. Returned ids map back
+/// through the catalog to verbatim `SelectionMatch`es; an id outside the
+/// current candidate set is filtered and reported via
 /// `RankDiagnostic.unknownSelectedId(id:)`.
 public actor SelectionTier {
     /// The full catalog this tier answers `search(intent:limit:)` calls
@@ -131,8 +130,7 @@ public actor SelectionTier {
     /// - Returns: the selected ids' verbatim `SelectionMatch`es, each
     ///   carrying the real fused `score`/`signals` `retrievalRanking`
     ///   reported for it, at most `limit`.
-    /// - Throws: an error from `idEnumGrammar(ids:)` (not expected for
-    ///   `Selection`'s fixed shape), or whatever the underlying session's
+    /// - Throws: whatever the underlying session's
     ///   `fork()`/`respond(to:generating:)` throws.
     public func search(intent: String, limit: Int) async throws -> [SelectionMatch] {
         guard limit > 0 else { return [] }
@@ -158,15 +156,11 @@ public actor SelectionTier {
     /// first use.
     ///
     /// - Returns: the cached root session, seeded with the full assembled
-    ///   prefix and constrained to `idEnumGrammar(ids:)` over the whole
-    ///   catalog -- every id is a legal selection under budget, since the
-    ///   assembled prefix already summarizes the whole catalog.
-    /// - Throws: an error from `idEnumGrammar(ids:)` (not expected for
-    ///   `Selection`'s fixed shape) on first use; nothing on a cached hit.
-    private func cachedRootSession() async throws -> any AgentSession {
+    ///   prefix -- every catalog id is a legal selection under budget, since
+    ///   the assembled prefix already summarizes the whole catalog.
+    private func cachedRootSession() -> any AgentSession {
         if let rootSession { return rootSession }
-        let grammar = try Self.idEnumGrammar(ids: catalog.ids)
-        let session = config.model(assembledPrefix, grammar)
+        let session = config.model(assembledPrefix)
         rootSession = session
         return session
     }
@@ -190,9 +184,8 @@ public actor SelectionTier {
     /// - Returns: the selected candidates' verbatim `SelectionMatch`es,
     ///   carrying the real retrieval `score`/`signals` that ranked them, at
     ///   most `limit`.
-    /// - Throws: an error from `idEnumGrammar(ids:)` (not expected for
-    ///   `Selection`'s fixed shape), or whatever the one-off session's
-    ///   `respond(to:generating:)` throws.
+    /// - Throws: whatever the one-off session's `respond(to:generating:)`
+    ///   throws.
     private func overBudgetSearch(intent: String, limit: Int) async throws -> [SelectionMatch] {
         let ranked = await retrievalRanking(intent)
         let candidates = Array(ranked.prefix(config.candidateLimit))
@@ -204,11 +197,7 @@ public actor SelectionTier {
 
         let candidateIDs = candidates.map(\.id)
         let prefix = Self.assemblePrefix(preamble: config.preamble, ids: candidateIDs, catalog: catalog)
-        // Constrained to *this round's* candidates, not the whole catalog --
-        // a one-off session has no stable prefix to reuse, so its grammar is
-        // recomputed fresh per call, scoped to exactly `candidateIDs`.
-        let grammar = try Self.idEnumGrammar(ids: candidateIDs)
-        let session = config.model(prefix, grammar)
+        let session = config.model(prefix)
         let selection = try await session.respond(to: intent, generating: Selection.self)
         return matches(
             forIDs: selection.ids,
@@ -220,13 +209,11 @@ public actor SelectionTier {
 
     /// Maps model-selected `ids` back through the catalog to verbatim
     /// `SelectionMatch`es (plan.md §6 "Verbatim lookup"), filtering any id
-    /// not resolvable and reporting it via `.unknownSelectedId` —
-    /// structurally unreachable given the id-enum grammar's per-element
-    /// enum constraint, but defended against anyway — deduplicating repeats
-    /// (structurally possible, since the xgrammar pipeline ignores
-    /// `uniqueItems` and `maxItems` only bounds the count; first occurrence
-    /// wins, keeping the model's own call-order intent) without reporting a
-    /// diagnostic for them, and truncating to `limit`.
+    /// not resolvable and reporting it via `.unknownSelectedId` — the
+    /// backstop against a model that answers with an id the current
+    /// candidate set does not hold — deduplicating repeats (first
+    /// occurrence wins, which keeps the model's own call-order intent)
+    /// without reporting a diagnostic for them, and truncating to `limit`.
     ///
     /// - Parameters:
     ///   - ids: the model-selected ids, in the order the model returned them.

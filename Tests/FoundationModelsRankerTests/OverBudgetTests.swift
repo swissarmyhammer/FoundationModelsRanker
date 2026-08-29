@@ -1,5 +1,4 @@
 import Foundation
-import FoundationModelsRouter
 import Testing
 
 @testable import FoundationModelsRanker
@@ -9,9 +8,8 @@ import Testing
 /// `summaryBlock(forID:)`) exceeds `capacityCharacterLimit`, the injected
 /// `retrievalRanking` closure ranks the whole catalog and the
 /// top-`candidateLimit` candidates (best-first) seed a fresh, uncached,
-/// unforked one-off session — constrained to those candidate ids only —
-/// with the cut reported via `RankDiagnostic.retrievalCut(considered:
-/// kept:)`.
+/// unforked one-off session — carrying those candidate ids only — with the
+/// cut reported via `RankDiagnostic.retrievalCut(considered:kept:)`.
 ///
 /// Ported from FoundationModelsMetadataRegistry's
 /// `Tests/FoundationModelsMetadataRegistryTests/OverBudgetTests.swift`,
@@ -141,7 +139,7 @@ struct OverBudgetTests {
     func overBudgetCreatesAFreshSessionPerCallWithoutCaching() async throws {
         let factoryCallCount = CallCounter()
         let config = SelectionConfig(
-            model: { _, _ in
+            model: { _ in
                 factoryCallCount.increment()
                 return ScriptedAgentSession([#"{"ids":["alpha"]}"#])
             },
@@ -166,7 +164,7 @@ struct OverBudgetTests {
     func overBudgetSessionIsNeverForked() async throws {
         let session = ScriptedAgentSession([#"{"ids":["alpha"]}"#])
         let config = SelectionConfig(
-            model: { _, _ in session },
+            model: { _ in session },
             capacityCharacterLimit: Self.forcedOverBudgetLimit,
             candidateLimit: 2
         )
@@ -251,7 +249,7 @@ struct OverBudgetTests {
         let recorder = DiagnosticRecorder()
         let factoryCallCount = CallCounter()
         let config = SelectionConfig(
-            model: { _, _ in
+            model: { _ in
                 factoryCallCount.increment()
                 return ScriptedAgentSession([#"{"ids":[]}"#])
             },
@@ -271,16 +269,16 @@ struct OverBudgetTests {
         #expect(recorder.diagnostics == [.retrievalCut(considered: 0, kept: 0)])
     }
 
-    // MARK: - Candidate-set-only verbatim lookup (one-off grammar id set)
+    // MARK: - Candidate-set-only verbatim lookup (this round's ids)
 
     @Test
     func idOutsideTopMCandidatesIsFilteredAndReportedAsUnknownEvenThoughItIsAValidCatalogID() async throws {
         let recorder = DiagnosticRecorder()
         // "charlie" is a real catalog id, but `candidateLimit: 2` excludes
         // it from this round's candidates (alpha, bravo only) -- the
-        // one-off session's grammar is constrained to the candidate ids,
-        // not the wider catalog, so this must be treated as unknown even
-        // though "charlie" resolves in the catalog overall.
+        // one-off session may select from this round's candidates only,
+        // not from the wider catalog, so this must be treated as unknown
+        // even though "charlie" resolves in the catalog overall.
         let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha","charlie"]}"#])
         let config = SelectionConfig(
             model: factory.makeSession,
@@ -343,7 +341,7 @@ struct OverBudgetTests {
             #"{"ids":["alpha"]}"#,
         ])
         let config = SelectionConfig(
-            model: { _, _ in
+            model: { _ in
                 factoryCallCount.increment()
                 return root
             },
@@ -367,40 +365,6 @@ struct OverBudgetTests {
         #expect(root.forkCount == 2)
     }
 
-    // MARK: - Grammar actually constrains the created session, scoped to
-    // this round's candidates (review finding, 2026-07-13)
-
-    @Test
-    func overBudgetSessionIsConstrainedToOnlyTheTopMCandidatesIDEnumGrammarNotTheWholeCatalog() async throws {
-        let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha"]}"#])
-        let config = SelectionConfig(
-            model: factory.makeSession,
-            capacityCharacterLimit: Self.forcedOverBudgetLimit,
-            candidateLimit: 2
-        )
-        let tier = SelectionTier(
-            catalog: Self.catalog,
-            config: config,
-            onDiagnostic: { _ in },
-            retrievalRanking: Self.rankEntireCatalog
-        )
-
-        _ = try await tier.search(intent: "alpha", limit: 5)
-
-        // `candidateLimit: 2` keeps only "alpha"/"bravo" this round (see
-        // `rankEntireCatalog`'s catalog-order tail) -- the session's grammar
-        // must be scoped to exactly those two, not the whole five-id
-        // catalog, matching the `allowedIDs` filtering `matches(forIDs:)`
-        // already applies downstream. Compared structurally, not via
-        // `Grammar`'s raw-string `Equatable`: `JSONSerialization.data(
-        // withJSONObject:)` doesn't guarantee stable key order across
-        // separate encodes of an equivalent `idEnumGrammar(ids:)` call, so
-        // two semantically-identical grammars can legitimately differ
-        // byte-for-byte.
-        let receivedGrammar = try #require(factory.receivedGrammars.first)
-        #expect(try GrammarTestSupport.enumIds(in: receivedGrammar) == ["alpha", "bravo"])
-    }
-
     @Test
     func prefixOneCharacterOverTheCapacityLimitUsesTheOneOffPath() async throws {
         let expectedPrefix = SelectionTier.assemblePrefix(
@@ -410,7 +374,7 @@ struct OverBudgetTests {
         )
         let factoryCallCount = CallCounter()
         let config = SelectionConfig(
-            model: { _, _ in
+            model: { _ in
                 factoryCallCount.increment()
                 return ScriptedAgentSession([#"{"ids":["alpha"]}"#])
             },

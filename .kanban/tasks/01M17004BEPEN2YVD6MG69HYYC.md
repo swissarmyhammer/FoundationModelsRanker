@@ -90,8 +90,33 @@ comments:
     - follow-up: ^3t4nhk7 — `plan.md`'s prefix description is stale, and that file is outside this card's stated file list.
     - next: `/review`
   timestamp: 2026-08-29T15:32:01.723432+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m172nfsyfyptvc18rfykv7d8
+  text: |
+    ### review — clean
+
+    - evidence: `review sha HEAD~1..HEAD` (commit `cbcee8c`). 3 files reviewed, 7 validators attempted, 0 failed. counts: findings 0, confirmed 0, refuted 0. The 6 `.kanban/` files are excluded by `.reviewignore`.
+    - format coherence: the prefix is a one-way format. `assembledPrefix` goes to only two places -- `.count` for the budget guard in `search(intent:limit:)`, and `config.model(prefix, grammar)` as session instructions. The over-budget `prefix` goes to the one-off session only. No code parses the prefix back into ids, so there is no round trip to break. The `## <id>` heading separates the id from the summary text below it.
+    - overload coverage: `assemblePrefix(preamble:ids:catalog:)` maps every id through `candidateEntry(forID:catalog:)`. `assemblePrefix(preamble:catalog:)` forwards to that overload with `ids: catalog.ids`. No path renders the old format.
+    - fixture quality: `threeItemCatalog` gives each item an explicit `summary`, so `FixtureSelectionCatalog.summaryBlock(forID:)` returns the summary, not the `block`. The three ids -- `deploy`, `rollback`, `status` -- appear in no summary (`ships containers to a cluster`, `reverts the last release`, `reports the current release state`) and in no part of the `.selectionDefault` preamble. Therefore `prefix.contains(id)` can pass only because the heading renders the id.
+    - boundary tests: `prefixExactlyAtTheCapacityLimitUsesTheCachedRootPath` and `prefixOneCharacterOverTheCapacityLimitUsesTheOneOffPath` build `expectedPrefix` from `SelectionTier.assemblePrefix` with the same preamble and catalog the tier uses, then set the limit to `expectedPrefix.count` and `expectedPrefix.count - 1`. The limit follows the prefix length, so each test still measures the boundary in its name.
+    - out of scope, not reported: `Package.swift` (^2q0p8gr), `README.md` (^jdw7sf0), `plan.md` (^3t4nhk7).
+    - next: task moved to `done`.
+  timestamp: 2026-08-29T15:36:59.454070+00:00
+- actor: claude-code
+  id: 01m172pcjhh9k37b9jrsgz4sca
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 3 files; private candidateEntry(forID:catalog:) added, both assemblePrefix overloads route through it, 3 new tests
+    - test: green — swift test, 256 passed, 0 failed, 0 skipped; the over-budget boundary tests still derive their limit from assemblePrefix, so they still measure the boundary
+    - commit: cbcee8c — 9 files changed, 310 insertions, 23 deletions
+    - review: clean — zero findings; all four directed checks passed, including that the threeItemCatalog fixture cannot pass by substring luck
+    - next: none — task is in done
+
+    End-to-end proof of the bug fix: `swift run FullMonty` on the default on-device path now returns a real match for every query. Before the fix every query printed `(no matches)` and reported `unknownSelectedId`.
+  timestamp: 2026-08-29T15:37:28.913026+00:00
+position_column: done
+position_ordinal: '9780'
 title: Render each candidate id in the assembled selection prefix
 ---
 ## What

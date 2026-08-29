@@ -86,7 +86,7 @@ struct SelectionTests {
             #"{"ids":["rollback"]}"#,
         ])
         let factoryCallCount = CallCounter()
-        let config = SelectionConfig(model: { _, _ in
+        let config = SelectionConfig(model: { _ in
             factoryCallCount.increment()
             return root
         })
@@ -304,8 +304,15 @@ struct SelectionTests {
 
     @Test
     func unknownIdFromAMisbehavingFakeIsFilteredAndReportedAsADiagnostic() async throws {
+        // The tier applies no grammar of its own, so nothing stops a model
+        // from answering with an id the catalog does not hold. This filter
+        // is the only backstop. Two unknown ids sit between two real ones,
+        // so the test proves the filter drops each unknown id, reports it,
+        // and still keeps every real id that follows.
         let recorder = DiagnosticRecorder()
-        let factory = RecordingSessionFactory(responses: [#"{"ids":["deploy","not-a-real-id"]}"#])
+        let factory = RecordingSessionFactory(
+            responses: [#"{"ids":["deploy","not-a-real-id","rollback","also-not-a-real-id"]}"#]
+        )
         let config = SelectionConfig(model: factory.makeSession)
         let tier = SelectionTier(
             catalog: Self.catalog,
@@ -316,8 +323,13 @@ struct SelectionTests {
 
         let matches = try await tier.search(intent: "task", limit: 5)
 
-        #expect(matches.map(\.id) == ["deploy"])
-        #expect(recorder.diagnostics == [.unknownSelectedId(id: "not-a-real-id")])
+        #expect(matches.map(\.id) == ["deploy", "rollback"])
+        #expect(
+            recorder.diagnostics == [
+                .unknownSelectedId(id: "not-a-real-id"),
+                .unknownSelectedId(id: "also-not-a-real-id"),
+            ]
+        )
     }
 
     @Test
@@ -348,7 +360,7 @@ struct SelectionTests {
     @Test
     func nonPositiveLimitReturnsEmptyWithoutCreatingASession() async throws {
         let factoryCallCount = CallCounter()
-        let config = SelectionConfig(model: { _, _ in
+        let config = SelectionConfig(model: { _ in
             factoryCallCount.increment()
             return ScriptedAgentSession([#"{"ids":["deploy"]}"#])
         })
@@ -441,29 +453,5 @@ struct SelectionTests {
         let enumValues = try #require(itemsSchema["enum"] as? [String])
 
         #expect(enumValues.isEmpty)
-    }
-
-    // MARK: - Grammar actually constrains the created session (review finding, 2026-07-13)
-
-    @Test
-    func cachedRootSessionIsConstrainedToTheWholeCatalogsIdEnumGrammar() async throws {
-        let factory = RecordingSessionFactory(responses: [#"{"ids":["deploy"]}"#])
-        let config = SelectionConfig(model: factory.makeSession)
-        let tier = SelectionTier(
-            catalog: Self.catalog,
-            config: config,
-            onDiagnostic: { _ in },
-            retrievalRanking: Self.rankEntireCatalog
-        )
-
-        _ = try await tier.search(intent: "task", limit: 5)
-
-        // Compared structurally, not via `Grammar`'s raw-string `Equatable`:
-        // `JSONSerialization.data(withJSONObject:)` doesn't guarantee stable
-        // key order across separate encodes of an equivalent
-        // `idEnumGrammar(ids:)` call, so two semantically-identical grammars
-        // can legitimately differ byte-for-byte.
-        let receivedGrammar = try #require(factory.receivedGrammars.first)
-        #expect(try GrammarTestSupport.enumIds(in: receivedGrammar) == Set(Self.catalog.ids))
     }
 }

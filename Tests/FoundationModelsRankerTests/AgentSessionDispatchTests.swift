@@ -47,7 +47,7 @@ struct AgentSessionDispatchTests {
 
     @Test
     func selectionTierReachesTheTypedOverride() async throws {
-        let config = SelectionConfig(model: { _, _ in PathMarkingAgentSession() })
+        let config = SelectionConfig(model: { _ in PathMarkingAgentSession() })
         let tier = SelectionTier(
             catalog: Self.catalog,
             config: config,
@@ -96,7 +96,7 @@ struct AgentSessionDispatchTests {
             Self.liveItem(id: "writeFile", description: "writes text to a file at a path"),
             Self.liveItem(id: "listDirectory", description: "lists the entries of a directory"),
         ])
-        let config = SelectionConfig(model: { instructions, _ in
+        let config = SelectionConfig(model: { instructions in
             LanguageModelSession(model: SystemLanguageModel.default, instructions: instructions)
         })
         let recorder = DiagnosticRecorder()

@@ -163,7 +163,7 @@ public struct Searcher: Sendable {
 
         if let session {
             let config = SelectionConfig(
-                model: { instructions, _ in session(instructions) },
+                model: session,
                 preamble: preamble,
                 candidateLimit: candidateLimit
             )

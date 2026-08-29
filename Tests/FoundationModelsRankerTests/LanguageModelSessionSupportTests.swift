@@ -1,4 +1,3 @@
-import FoundationModelsRouter
 import FoundationModels
 import Testing
 
@@ -6,13 +5,14 @@ import Testing
 
 /// Tests for the retroactive `LanguageModelSession: AgentSession`
 /// conformance (plan.md §3a, §6 phase 3): compile-level proofs that any
-/// FoundationModels model constructs a valid `AgentSession` factory for both
-/// the seam that exists today (`SelectionConfig.model`, `@Sendable (String,
-/// Grammar) -> any AgentSession`) and the simpler seam plan.md §3a's
-/// still-unbuilt `Searcher` facade documents (`(String) -> any
-/// AgentSession`), plus a fork-semantics test -- all exercised without live
-/// inference (construction and `fork()` only; no `respond(to:)` call, so no
-/// GPU/model needed), per this task's Tests scope.
+/// FoundationModels model constructs a valid `AgentSession` factory. Both
+/// seams now take the same shape, `@Sendable (String) -> any AgentSession`
+/// -- `SelectionConfig.model` and the `Searcher` facade's `session:` -- so
+/// one test reads the bare closure type and the other reads the closure
+/// through a `SelectionConfig`. A fork-semantics test stands beside them.
+/// Every test here runs without live inference (construction and `fork()`
+/// only; no `respond(to:)` call, so no GPU/model needed), per this task's
+/// Tests scope.
 ///
 /// SDK note (plan.md §7 risk): the installed macOS 27 SDK's
 /// `FoundationModels.swiftinterface` exposes only `SystemLanguageModel
@@ -35,16 +35,15 @@ struct LanguageModelSessionSupportTests {
 
     @Test
     func languageModelSessionFactoryClosureTypeChecksAsASelectionConfigModelFactory() {
-        // `SelectionConfig.model`'s real, current seam takes a `Grammar`
-        // alongside the instructions text (SelectionConfig.swift's own
-        // 2026-07-13 review-finding header) -- a plain `LanguageModelSession`
-        // factory ignores it, relying instead on the session's native guided
-        // generation via `respond(to:generating:)` above.
-        let config = SelectionConfig(model: { instructions, _ in
+        // `SelectionConfig.model` takes only the instructions text. A plain
+        // `LanguageModelSession` factory applies no grammar of its own: it
+        // relies on the session's native guided generation through
+        // `respond(to:generating:)` instead.
+        let config = SelectionConfig(model: { instructions in
             LanguageModelSession(model: SystemLanguageModel.default, instructions: instructions)
         })
 
-        let session = config.model("selection guidance", try! SelectionTier.idEnumGrammar(ids: ["a"]))
+        let session = config.model("selection guidance")
 
         #expect(session is LanguageModelSession)
     }
