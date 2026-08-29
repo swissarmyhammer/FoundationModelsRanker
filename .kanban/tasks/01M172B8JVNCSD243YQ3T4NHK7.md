@@ -35,8 +35,35 @@ comments:
     - evidence: 1 file — plan.md. The §6 phase 3 "Selection prompt" bullet now says the prefix is preamble + `# Candidates` + one entry for each candidate, and that each entry is the candidate id as a `## <id>` markdown heading above that candidate's summary block. An amendment note under the bullet gives the date (2026-08-29), the previous wording, and the reason. `swift build`: complete, no warning. `swift test`: 273 tests in 21 suites passed, 0 failed, no warning.
     - next: /review
   timestamp: 2026-08-29T18:55:09.029157+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m17e3arr3yj44s8syc7ygrhs
+  text: |-
+    ### commit — changed
+    - evidence: f0f626d — 7 files changed (plan.md + 6 kanban board files). Local commit only, not pushed.
+    - next: none
+  timestamp: 2026-08-29T18:56:47.384046+00:00
+- actor: claude-code
+  id: 01m17e6hqz8k9mhy5jxzac4b83
+  text: |
+    ### review — clean
+    - evidence: zero new findings. `review sha HEAD~1..HEAD` (commit f0f626d): 0 findings, 0 confirmed, 0 refuted. No validator reads Markdown, so `plan.md` got a manual check. Three checks, all correct:
+      1. Format agrees with the code. `SelectionTier.swift` line 359 makes `"\(preamble)\n\n# Candidates\n\(entries.joined(separator: "\n\n"))"`, and line 378 makes each entry as `"## \(id)\n\(summary)"`. The amended bullet (plan.md lines 307-310) says preamble + `# Candidates` + one entry for each candidate, and that each entry is the candidate id as a `## <id>` markdown heading above that candidate's summary block. The two agree.
+      2. The amendment note is honest. The note (plan.md lines 318-325) quotes the previous wording word for word. The text at `HEAD~1:plan.md` reads "the full prefix is preamble + `# Candidates` + each candidate's summary block, assembled in `SelectionTier.assemblePrefix`", which is the same text as the quotation. The note gives task `^g69hyyc` as the cause, and commit cbcee8c is that task: it added `candidateEntry(forID:catalog:)` to render the `## <id>` heading. The reason in the note ("A prefix that shows only the summary blocks does not show the model which ids it can return") is the same reason that commit cbcee8c gives.
+      3. The change stays in scope. `plan.md` has exactly 1 diff hunk. A word-level diff shows word changes only in the prefix clause and in the new note. All other lines in the hunk are the same words with a new line wrap. No other part of `plan.md` changed, so the historical record stays as it was. The `summaryBlock(forId:)` label spelling at plan.md line 292 and the `summary` mention at line 186 make no statement about the prefix format, and they were correctly left alone.
+    - next: none
+  timestamp: 2026-08-29T18:58:32.831158+00:00
+- actor: claude-code
+  id: 01m17e7a00z3bph17857eyhdhn
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — plan.md only; §6 phase 3's prefix-format bullet amended, with a dated note recording the previous wording and the reason
+    - test: green — folded into the implement step's own run, because this change touches no compiled file: swift build clean, swift test 273 passed, 0 failed, 0 warnings. A separate test agent would have verified nothing new; recording the fold rather than skipping it silently.
+    - commit: f0f626d — 7 files changed
+    - review: clean — zero findings; the reviewer verified the amended bullet against the code, verified the quoted previous wording against `git show HEAD~1:plan.md`, and confirmed a single diff hunk so the rest of the historical record is untouched
+    - next: none — task is in done
+  timestamp: 2026-08-29T18:58:57.664656+00:00
+position_column: done
+position_ordinal: '9e80'
 title: Update plan.md's selection-prefix description to include the candidate id
 ---
 ## What

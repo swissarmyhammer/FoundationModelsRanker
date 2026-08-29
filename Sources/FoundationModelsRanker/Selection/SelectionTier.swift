@@ -14,12 +14,12 @@ import Foundation
 /// (`../FoundationModelsMultitool/Sources/.../Librarian.swift`), over any
 /// narrow `SelectionCatalog` conformer instead of a bespoke index type.
 ///
-/// Assembles a prefix from `SelectionConfig.preamble` + every catalog id
-/// rendered as a markdown heading above that id's
-/// **`summaryBlock(forID:)`** (plan.md §4: the summary seeds the selection
-/// prefix; retrieval indexes the full `block(forID:)` instead) once at
-/// `init`, since the catalog never changes for this tier's lifetime — a
-/// reload replaces the whole tier rather than mutating one in place.
+/// Assembles a prefix from `SelectionConfig.preamble`, a `# Candidates`
+/// header, and every catalog id rendered as a markdown heading above that
+/// id's **`summaryBlock(forID:)`** (plan.md §4: the summary seeds the
+/// selection prefix; retrieval indexes the full `block(forID:)` instead)
+/// once at `init`, since the catalog never changes for this tier's lifetime
+/// — a reload replaces the whole tier rather than mutating one in place.
 ///
 /// **Under budget** (assembled prefix ≤ `capacityCharacterLimit`): a cached
 /// root session is seeded once with the prefix, and each

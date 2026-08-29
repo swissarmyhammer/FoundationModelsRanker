@@ -64,9 +64,11 @@ public struct SelectionConfig: Sendable {
     /// to `.selectionDefault`.
     public var preamble: String
 
-    /// The assembled prefix's character budget (preamble + every
-    /// candidate's summary block); at or under this, the cached-root +
-    /// fork-per-call path runs. Negative values are clamped to `0`.
+    /// The assembled prefix's character budget. The budget measures the full
+    /// prefix text: the preamble, the `# Candidates` header, and one
+    /// `## <id>` heading above each candidate's summary block. At or under
+    /// this budget, the cached-root + fork-per-call path runs. Negative
+    /// values are clamped to `0`.
     public var capacityCharacterLimit: Int
 
     /// Over budget, how many top-ranked retrieval candidates seed the

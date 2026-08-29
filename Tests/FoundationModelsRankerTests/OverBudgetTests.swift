@@ -4,9 +4,10 @@ import Testing
 @testable import FoundationModelsRanker
 
 /// Tests for the selection tier's over-budget path (plan.md §6 phase 3):
-/// when the assembled prefix (preamble + every candidate's
-/// `summaryBlock(forID:)`) exceeds `capacityCharacterLimit`, the injected
-/// `retrievalRanking` closure ranks the whole catalog and the
+/// when the assembled prefix (the preamble, the `# Candidates` header, and
+/// one `## <id>` heading above each candidate's `summaryBlock(forID:)`)
+/// exceeds `capacityCharacterLimit`, the injected `retrievalRanking`
+/// closure ranks the whole catalog and the
 /// top-`candidateLimit` candidates (best-first) seed a fresh, uncached,
 /// unforked one-off session — carrying those candidate ids only — with the
 /// cut reported via `RankDiagnostic.retrievalCut(considered:kept:)`.
