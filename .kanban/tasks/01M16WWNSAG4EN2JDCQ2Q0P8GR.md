@@ -64,6 +64,90 @@ comments:
     - open: one test still reports "skipped" under a plain `swift test` — `selectionTierWithABareLanguageModelSessionReachesGuidedGeneration`, gated on `FOUNDATIONMODELSRANKER_INTEGRATION_TESTS` because it needs a real `SystemLanguageModel`. It is unchanged by this card and pre-dates it.
     - next: `/review`
   timestamp: 2026-08-29T18:12:54.879366+00:00
+- actor: claude-code
+  id: 01m17brjmxxn9qvjdy0m261pw9
+  text: |-
+    ### commit — changed
+    - evidence: 3dc2d99 build(package): remove all external dependencies from Package.swift — 8 files changed
+    - next: none
+  timestamp: 2026-08-29T18:15:57.853819+00:00
+- actor: claude-code
+  id: 01m17bzqvps2er939eq3jne7fc
+  text: |
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` gave 0 findings, 0 confirmed, 0 refuted, 7 attempted, 0 failed. The stale index at `.build/out` was removed and `swift build --build-tests` ran again first (exit 0), thus no false "unused symbol" result. The directed acceptance check found 10 open items: `Sources/FoundationModelsRanker/Selection/LanguageModelSessionSupport.swift:57`, `Sources/FoundationModelsRanker/Selection/SelectionTier.swift:395`, `Tests/FoundationModelsRankerTests/SelectionTests.swift:21`, `Tests/FoundationModelsRankerTests/SelectionTests.swift:452`, `Tests/FoundationModelsRankerTests/ReadmeExampleTests.swift:10`, `Tests/FoundationModelsRankerTests/Support/ScriptedAgentSession.swift:12`, `Tests/FoundationModelsRankerTests/Support/ScriptedAgentSession.swift:14`, `Tests/FoundationModelsRankerTests/Support/ScriptedAgentSession.swift:31`, `Tests/FoundationModelsRankerTests/SearcherTests.swift:15`, `Tests/FoundationModelsRankerTests/OverBudgetTests.swift:21` — each names Router in a doc comment.
+    - passed: the swift-jinja pin is correct to delete (`swift package show-dependencies` gives "No external dependencies found", no `Package.resolved`); `theManifestDeclaresNoPackageDependency()` reads the real `Package.swift` from `#filePath` and does not make the text it examines; the `platforms:` and `packageName` comment rewrites agree with `plan.md` line 130 and with the sibling package that exists; no file names MLX, Hugging Face, Tokenizers, or Jinja.
+    - next: correct the 10 doc comments, then run `/review` again.
+  timestamp: 2026-08-29T18:19:52.566901+00:00
+- actor: claude-code
+  id: 01m17c0wjfxkx6q2e2vnjq70dz
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 4 files; Package.swift to `dependencies: []` (162 lines to 76), the unused Router import deleted from ScriptedAgentSession.swift, a manifest guard test added, the two mlx warning bullets deleted from README
+    - test: green — swift test 269 passed, 0 failed, 1 documented gated skip; `swift package show-dependencies` reports none; both MLX warnings gone; a clean build fell from about 15 minutes to 6.9 seconds
+    - commit: 3dc2d99 — 8 files changed
+    - review: findings — 10 open, the bare word "Router" in doc-comment prose across 6 files
+    - next: implement iteration 2 works the 10 findings
+
+    The implementer's scan used the full name `FoundationModelsRouter`, so the bare word `Router` passed unnoticed. The three merit checks all passed: the swift-jinja pin is genuinely moot, the guard test reads the real file from disk, and both extra comment rewrites are accurate.
+  timestamp: 2026-08-29T18:20:30.159896+00:00
+- actor: claude-code
+  id: 01m17c78mhtdz9qfbmjhsnnt1c
+  text: |
+    ### Iteration 2 — the 10 "Router" findings
+
+    The earlier scan used the full name `FoundationModelsRouter`, so the bare word
+    `Router` stayed. This pass used `grep -rniw "router" Sources Tests Examples
+    Package.swift`, which finds the word alone and ignores case.
+
+    Each comment is reworded, not deleted. The information in the prose stays:
+
+    - `LanguageModelSessionSupport.swift` — keeps the contrast between a session
+      that an external grammar constrains and a plain session. It now reads "a
+      session that an external grammar constrains gets the id-enum grammar; a
+      plain session uses this typed output instead".
+    - `SelectionTier.swift` (`idEnumSchema(ids:)`) — keeps the guidance that tells
+      a caller how to make a grammar from the schema text, and keeps the concrete
+      example. It now names the caller by capability: "A caller whose model backend
+      accepts a JSON Schema grammar makes a grammar from the text with that
+      backend's own grammar type, for example
+      `Grammar.jsonSchema(SelectionTier.idEnumSchema(ids: ids))`." The example is
+      now clearly an example of a backend API, not a dependency of this package.
+    - `SelectionTests.swift` (the `idEnumSchemaIsWellFormedJson` comment) — "which
+      a caller wraps in its own model backend's grammar type". The reason to parse
+      the text in the test stays.
+    - `SelectionTests.swift`, `SearcherTests.swift`, `OverBudgetTests.swift`,
+      `ScriptedAgentSession.swift` — the suite headers keep the "zero GPU" and
+      "scripted double" reasoning; "Router dependency" becomes "external
+      dependency", "a real Router model" becomes "a real model", and "a real Router
+      session" becomes "a real model session".
+    - `ReadmeExampleTests.swift` — "never a live on-device model", which names only
+      the on-device model, as the finding permits.
+
+    ### Scope note
+
+    The `acceptance/no-deleted-dependency-name` rule covers the deleted package.
+    Comments that name the sibling package `FoundationModelsMetadataRegistry` stay:
+    the earlier review listed them under "Checks that pass".
+
+    ### Verification
+
+    - `grep -rniw "router" Sources Tests Examples Package.swift` finds nothing
+      (exit 1).
+    - `swift build` = exit 0, "Build complete! (1.15 sec)", 0 warnings.
+    - `swift test` = exit 0, 269 tests in 21 suites passed, 0 failures, 0 warnings,
+      0 skipped.
+    - No source line changed. Only comment prose changed, so no callgraph or blast
+      radius is affected.
+  timestamp: 2026-08-29T18:23:59.121689+00:00
+- actor: claude-code
+  id: 01m17c7ep5sr2sxenjq8zs7t1d
+  text: |
+    ### implement — changed
+    - evidence: 6 files — `Sources/FoundationModelsRanker/Selection/LanguageModelSessionSupport.swift`, `Sources/FoundationModelsRanker/Selection/SelectionTier.swift`, `Tests/FoundationModelsRankerTests/SelectionTests.swift` (2 comments), `Tests/FoundationModelsRankerTests/ReadmeExampleTests.swift`, `Tests/FoundationModelsRankerTests/Support/ScriptedAgentSession.swift` (2 comments), `Tests/FoundationModelsRankerTests/SearcherTests.swift`, `Tests/FoundationModelsRankerTests/OverBudgetTests.swift`. All 10 review findings are corrected and checked. Comment prose only; no code line changed. `README.md` and `plan.md` untouched (cards ^jdw7sf0 and ^3t4nhk7 own them).
+    - verification: `grep -rniw "router" Sources Tests Examples Package.swift` finds nothing; `swift build` exit 0, 0 warnings; `swift test` exit 0, 269 tests in 21 suites passed, 0 warnings.
+    - next: `/review`
+  timestamp: 2026-08-29T18:24:05.317954+00:00
 depends_on:
 - 01M16WTVGW4GDJK9MD6CD4GEYS
 - 01M16WW6WN0638CJKEJ3XEHKMV
@@ -104,3 +188,59 @@ Files to change:
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-08-29 13:17)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 5 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+
+The review engine found no problem in the lines that commit `3dc2d99` added or
+changed. The stale index at `.build/out` was removed before the run, and the
+package was built again with `swift build --build-tests`. Thus the run reports
+no false "unused symbol" result.
+
+### Checks that pass
+
+- The `swift-jinja` pin is now correct to delete. `Package.swift` declares
+  `dependencies: []`, so SwiftPM resolves no remote package. `swift package
+  show-dependencies` gives "No external dependencies found", and there is no
+  `Package.resolved` file. No path can bring in swift-transformers, thus
+  `Sources/Hub/Config.swift` cannot be compiled against swift-jinja 2.4.0. The
+  danger is gone with the dependency.
+- The guard test is a true guard. `theManifestDeclaresNoPackageDependency()`
+  makes the path from `#filePath`, opens the real `Package.swift` on disk with
+  `String(contentsOf:encoding:)`, and then looks for `.package(`. It does not
+  make the text that it examines.
+- The two additional comments are correct. `plan.md` line 130 gives the macOS 27
+  floor and says both consumers are already on 27, thus "the floor both consumer
+  repos use" is true. The sibling package `FoundationModelsMetadataRegistry`
+  exists, thus the `packageName` doc comment is true.
+- No file in `Sources`, `Tests`, `Examples`, or `Package.swift` names MLX,
+  Hugging Face, Tokenizers, or Jinja. `Package.swift` has no name of a deleted
+  package.
+
+### Open finding — the name "Router" stays in doc comments
+
+The review request gives this rule: no file in `Sources`, `Tests`, `Examples`,
+or `Package.swift` may name Router. The scan finds the name "Router" 10 times.
+Each one is prose in a comment. The package has no dependency on
+FoundationModelsRouter, and a person outside the swissarmyhammer group cannot
+read that repository. Thus each comment points to something the reader cannot
+find. Delete the name, or write the same idea without it. Correct all 10, not
+only the examples that you read first.
+
+- [x] `Sources/FoundationModelsRanker/Selection/LanguageModelSessionSupport.swift:57` `acceptance/no-deleted-dependency-name` — the doc comment names "Router-guided sessions". Give the rule for a guided session without the name of the deleted package.
+- [x] `Sources/FoundationModelsRanker/Selection/SelectionTier.swift:395` `acceptance/no-deleted-dependency-name` — the doc comment names "A Router caller". Write "a caller" instead.
+- [x] `Tests/FoundationModelsRankerTests/SelectionTests.swift:21` `acceptance/no-deleted-dependency-name` — the suite header says "no Router dependency". The package now has no external dependency at all, thus say "zero GPU, no external dependency".
+- [x] `Tests/FoundationModelsRankerTests/SelectionTests.swift:452` `acceptance/no-deleted-dependency-name` — the comment names "a Router caller". Write "a caller" instead.
+- [x] `Tests/FoundationModelsRankerTests/ReadmeExampleTests.swift:10` `acceptance/no-deleted-dependency-name` — the doc comment says "on-device model or Router". Name only the on-device model, or write "any supplied session".
+- [x] `Tests/FoundationModelsRankerTests/Support/ScriptedAgentSession.swift:12` `acceptance/no-deleted-dependency-name` — the header says "never touch a real Router model". Write "never touch a real model".
+- [x] `Tests/FoundationModelsRankerTests/Support/ScriptedAgentSession.swift:14` `acceptance/no-deleted-dependency-name` — the header says "no Router dependency". Write "no external dependency".
+- [x] `Tests/FoundationModelsRankerTests/Support/ScriptedAgentSession.swift:31` `acceptance/no-deleted-dependency-name` — the doc comment says "a real Router session". Write "a real model session".
+- [x] `Tests/FoundationModelsRankerTests/SearcherTests.swift:15` `acceptance/no-deleted-dependency-name` — the suite header says "Router dependency". Write "external dependency".
+- [x] `Tests/FoundationModelsRankerTests/OverBudgetTests.swift:21` `acceptance/no-deleted-dependency-name` — the suite header says "no Router dependency". Write "no external dependency".

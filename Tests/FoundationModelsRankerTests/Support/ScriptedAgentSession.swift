@@ -9,9 +9,9 @@ import os
 // `Tests/FoundationModelsMetadataRegistryTests/TestSupport/ScriptedAgentSession.swift`
 // and `SelectionFixtures.swift` (themselves lifted from Multitool's own
 // `LibrarianFixtures.swift`): `SelectionTests`/`OverBudgetTests` never touch a
-// real Router model — a selection tier's session is always supplied through
+// real model — a selection tier's session is always supplied through
 // the internal `AgentSession` seam, driven by these scripted fakes. Zero GPU,
-// no Router dependency.
+// no external dependency.
 
 /// Thrown by `ScriptedAgentSession.respond(to:)` when it receives more calls
 /// than it was scripted with — a test bug (an under-scripted fixture), never
@@ -28,7 +28,7 @@ struct ScriptedAgentSessionError: Error, Equatable, CustomStringConvertible {
 
 /// A scripted `AgentSession` test double: returns its canned `responses` in
 /// order, one per call, regardless of the prompt, and counts `fork()`
-/// calls — this test target's zero-GPU stand-in for a real Router session.
+/// calls — this test target's zero-GPU stand-in for a real model session.
 ///
 /// `final class ... Sendable` (not a `struct`) because `respond(to:)` needs
 /// to record every prompt it received and advance a call index across

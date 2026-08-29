@@ -18,7 +18,7 @@ import Testing
 /// that's the separate `Searcher` facade task) — driven entirely against the
 /// internal `AgentSession` seam via scripted fakes
 /// (`Support/ScriptedAgentSession.swift`) over a `FixtureSelectionCatalog`
-/// (`Support/FixtureSelectionCatalog.swift`) — zero GPU, no Router
+/// (`Support/FixtureSelectionCatalog.swift`) — zero GPU, no external
 /// dependency. The over-budget path is covered in `OverBudgetTests`.
 struct SelectionTests {
     // MARK: - Fixtures
@@ -449,10 +449,10 @@ struct SelectionTests {
 
     @Test
     func idEnumSchemaIsWellFormedJson() throws {
-        // The function hands back schema *source text*, which a Router caller
-        // wraps as `Grammar.jsonSchema(...)`. Text that does not parse as JSON
-        // fails only later, inside that caller's grammar compiler, so parse it
-        // here.
+        // The function hands back schema *source text*, which a caller wraps
+        // in its own model backend's grammar type. Text that does not parse
+        // as JSON fails only later, inside that caller's grammar compiler, so
+        // parse it here.
         let schema = try SelectionTier.idEnumSchema(ids: Self.catalog.ids)
 
         let data = try #require(schema.data(using: .utf8))

@@ -54,9 +54,9 @@ extension LanguageModelSession: AgentSession {
     /// decoding, so routing through that typed API is both more direct and
     /// more robust than parsing free text as JSON after the fact -- the
     /// plain-`LanguageModelSession` half of plan.md §3a's "grammar
-    /// enforcement follows the session" rule (Router-guided sessions get the
-    /// external id-enum grammar; plain sessions rely on this typed output
-    /// instead).
+    /// enforcement follows the session" rule (a session that an external
+    /// grammar constrains gets the id-enum grammar; a plain session uses
+    /// this typed output instead).
     ///
     /// - Parameters:
     ///   - prompt: the prompt to respond to.

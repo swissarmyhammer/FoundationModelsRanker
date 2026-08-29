@@ -392,8 +392,9 @@ public actor SelectionTier {
     /// there are candidates. The cap is the backstop for `uniqueItems`, which
     /// the xgrammar pipeline ignores.
     ///
-    /// This function gives the schema text only. A Router caller makes a
-    /// grammar from the text:
+    /// This function gives the schema text only. A caller whose model
+    /// backend accepts a JSON Schema grammar makes a grammar from the text
+    /// with that backend's own grammar type, for example
     /// `Grammar.jsonSchema(SelectionTier.idEnumSchema(ids: ids))`.
     ///
     /// - Parameter ids: the candidate ids to limit the output to. Use the

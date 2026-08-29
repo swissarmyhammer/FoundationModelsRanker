@@ -7,7 +7,7 @@ import Testing
 /// `SearchItem` list, the zero-config `Searcher(items)` call, the explicit
 /// session override, and the `embedder:` + `session:` "full monty" variant
 /// -- against scripted `AgentSession`/`TextEmbedding` fakes (never a live
-/// on-device model or Router), so a change to `Searcher`'s public surface
+/// on-device model), so a change to `Searcher`'s public surface
 /// breaks this test before it breaks a reader pasting the README into their
 /// own project.
 ///

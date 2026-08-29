@@ -12,7 +12,7 @@ import Testing
 /// Driven entirely against scripted `AgentSession` fakes
 /// (`Support/ScriptedAgentSession.swift`) and `FakeEmbedder`
 /// (`Support/FakeEmbedder.swift`) -- zero GPU, no live system model, no
-/// Router dependency, matching every other selection-tier suite in this
+/// external dependency, matching every other selection-tier suite in this
 /// target. One test makes a real `LanguageModelSession` to show the
 /// instance front door takes it, but answers in `.retrieval` mode, so no
 /// test here runs inference.

@@ -18,7 +18,7 @@ import Testing
 /// FoundationModelsRanker — that's the separate `Searcher` facade task): `retrievalRanking`
 /// is a scripted closure standing in for the real BM25/trigram/cosine tier
 /// (`HybridRanker.fullOrdering`, wired up once the `Searcher` facade
-/// composes this tier with it) — zero GPU, no Router dependency, the same
+/// composes this tier with it) — zero GPU, no external dependency, the same
 /// pattern `SelectionTests` established for the under-budget path.
 ///
 /// The source suite's `.auto` mode resolution tests
