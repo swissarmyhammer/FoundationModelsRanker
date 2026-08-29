@@ -8,28 +8,27 @@
 // specifics.
 
 import FoundationModels
-import FoundationModelsRouter
 
-/// The minimal seam a selection-tier agent drives each turn through: send a
-/// prompt, get text back -- plus the `fork()` primitive a prefix-cached
-/// root session needs.
+/// The minimal seam a selection-tier agent uses for each turn: send a
+/// prompt, and get text back. The seam also has the `fork()` primitive that
+/// a prefix-cached root session needs.
 ///
-/// `RoutedSession` (FoundationModelsRouter's own actor protocol) already has
-/// exactly this shape -- `respond(to:) async throws -> String`, for both a
-/// plain session (`RoutedLLM.makeSession(instructions:workingDirectory:)`)
-/// and a guided one
-/// (`RoutedLLM.makeGuidedSession(_:instructions:workingDirectory:)`), which
-/// constrains its output internally but still returns plain text through
-/// the same method -- plus `fork(workingDirectory:)`, which seeds a child
-/// from a *copy* of the parent's prefilled KV cache. `fork()` below mirrors
-/// that one-argument-dropped: this package never needs to steer a fork's
-/// working directory, so the seam stays minimal.
+/// The seam is small on purpose. A conformer answers a prompt with plain
+/// text, and that is all a selection call needs from a model. A conformer
+/// that constrains its own output returns its answer through the same
+/// method, so one shape is sufficient for both.
 ///
-/// Callers depend on this seam -- never on `RoutedSession` or `RoutedLLM`
-/// directly -- so a unit test can drive either against a scripted fake
-/// conforming to this protocol, with zero GPU and no Router dependency at
-/// all. `RoutedAgentSession` below is the only production conformer,
-/// adapting a real `RoutedSession` to it.
+/// `fork()` is the second part. A prefix-rooted session fills its prefix one
+/// time. Then it forks a child for each call, so it does not send the prefix
+/// again. A conformer whose model can copy a filled KV cache makes `fork()`
+/// do that copy. Every other conformer uses the default below, which returns
+/// `self`.
+///
+/// Callers use this seam and nothing else. Thus a unit test can drive a
+/// selection tier against a scripted fake that conforms to this protocol,
+/// with no GPU. A caller that has its own model writes its own conformer.
+/// This package supplies the conformance for `LanguageModelSession` (see
+/// `LanguageModelSessionSupport.swift`), and no other.
 public protocol AgentSession: Sendable {
     /// Sends `prompt` to the session and returns its complete text response.
     ///
@@ -40,11 +39,13 @@ public protocol AgentSession: Sendable {
     /// - Throws: whatever the underlying session throws.
     func respond(to prompt: String) async throws -> String
 
-    /// Forks a child session that continues this one's conversation,
-    /// inheriting its accumulated context (prefilled prefix included) and
-    /// then diverging independently -- `RoutedSession.fork(workingDirectory:)`'s
-    /// seam, the primitive a prefix-rooted session forks per call so its
-    /// prefix is prefilled once rather than replayed on every call.
+    /// Forks a child session. The child continues this session's
+    /// conversation and gets its accumulated context, which includes the
+    /// filled prefix. The child then diverges on its own.
+    ///
+    /// This is the primitive that a prefix-rooted session forks for each
+    /// call, so the session fills its prefix one time instead of sending it
+    /// again on every call.
     ///
     /// - Returns: the forked child session.
     /// - Throws: whatever the underlying session throws while forking.
@@ -73,32 +74,28 @@ public protocol AgentSession: Sendable {
 }
 
 extension AgentSession {
-    /// Default `fork()`: returns `self`, unchanged.
+    /// Default `fork()`: returns `self`, with no change.
     ///
-    /// Conformers with no real KV cache to fork from -- a scripted test
-    /// double standing in for a session whose caller never calls `fork()`
-    /// -- never need to override this; only `RoutedAgentSession` (wrapping
-    /// a real `RoutedSession`, whose `fork()` does real KV-cache work) and
-    /// a test double that asserts on fork *call count* provide their own
-    /// conformance.
+    /// A conformer with no real KV cache to fork does not need to override
+    /// this. A scripted test double that stands in for a session whose
+    /// caller never calls `fork()` is the usual example. Two kinds of
+    /// conformer supply their own `fork()`: one whose model can copy a
+    /// filled KV cache, and a test double that counts fork calls.
     public func fork() async throws -> any AgentSession { self }
 
     /// Default `respond(to:generating:)`: decodes `respond(to:)`'s plain text
     /// as JSON for `T`.
     ///
-    /// FoundationModelsRouter's own typed guided shape
-    /// (`RoutedLLM.respond<T: Generable>(to:generating:)`) lives on the
-    /// *model* handle, not on a `RoutedSession` -- it derives `T`'s schema,
-    /// constrains a **fresh, one-shot** session to it, and decodes the
-    /// result, which would re-prefill the surface prefix on every call and
-    /// defeat the whole point of a prefix-rooted session. This default
-    /// instead decodes over *this* session's own `respond(to:)` -- already
-    /// grammar-constrained when the session was vended via
-    /// `RoutedLLM.makeGuidedSession(_:instructions:workingDirectory:)`, and
-    /// a `fork()` of one inherits that grammar (per `RoutedSession
-    /// .fork(workingDirectory:)`'s documentation) -- so the constrained
-    /// decode happens on a session that already carries the prefilled
-    /// prefix.
+    /// The decode runs over this session's own `respond(to:)`. Thus it runs
+    /// on the session that already holds the filled prefix. A model whose
+    /// typed API constrains a new, one-shot session to `T`'s schema would
+    /// fill the prefix again on every call, which removes the whole
+    /// advantage of a prefix-rooted session. A conformer that has such an
+    /// API overrides this method and keeps its own session.
+    ///
+    /// The text this method decodes is already grammar-constrained when the
+    /// caller made the session with a grammar for `T`'s schema, and a
+    /// `fork()` of such a session inherits that grammar.
     ///
     /// - Parameters:
     ///   - prompt: the prompt to respond to.
@@ -112,56 +109,5 @@ extension AgentSession {
     public func respond<T: Generable>(to prompt: String, generating type: T.Type) async throws -> T {
         let raw = try await respond(to: prompt)
         return try T(GeneratedContent(json: raw))
-    }
-}
-
-/// Adapts a FoundationModelsRouter `RoutedSession` to the `AgentSession`
-/// seam this package's consumers drive.
-///
-/// A thin wrapper, not a reimplementation: every call forwards to the
-/// wrapped session unchanged. `RoutedSession` is itself an `Actor`-bound
-/// protocol (Router's session is a real actor internally), so this struct
-/// only ever holds the existential and `await`s across it -- it adds no
-/// state and no synchronization of its own.
-public struct RoutedAgentSession: AgentSession {
-    /// The Router session every call forwards to.
-    private let session: any RoutedSession
-
-    /// Wraps `session` as an `AgentSession`.
-    ///
-    /// - Parameter session: the Router session to adapt. Vended by
-    ///   `RoutedLLM.makeSession(instructions:workingDirectory:)` (plain) or
-    ///   `RoutedLLM.makeGuidedSession(_:instructions:workingDirectory:)`
-    ///   (guided) -- both satisfy `RoutedSession`, so both adapt identically
-    ///   here.
-    public init(session: any RoutedSession) {
-        self.session = session
-    }
-
-    /// Sends `prompt` to the wrapped Router session and returns its
-    /// response.
-    ///
-    /// A pure forward: the wrapped `RoutedSession` does the actual work
-    /// (guided or plain), and this adapter passes the result through
-    /// unchanged.
-    ///
-    /// - Parameter prompt: the prompt to respond to.
-    /// - Returns: the wrapped session's complete text response.
-    /// - Throws: whatever the wrapped `RoutedSession` throws.
-    public func respond(to prompt: String) async throws -> String {
-        try await session.respond(to: prompt)
-    }
-
-    /// Forks the wrapped Router session and returns a new
-    /// `RoutedAgentSession` wrapping the forked child.
-    ///
-    /// Forwards to `RoutedSession.fork(workingDirectory:)` with `nil` --
-    /// this package never needs to steer a fork's working directory -- and
-    /// re-adapts the returned child session to the `AgentSession` seam.
-    ///
-    /// - Returns: a new `RoutedAgentSession` wrapping the forked child.
-    /// - Throws: whatever the wrapped `RoutedSession` throws while forking.
-    public func fork() async throws -> any AgentSession {
-        RoutedAgentSession(session: try await session.fork(workingDirectory: nil))
     }
 }

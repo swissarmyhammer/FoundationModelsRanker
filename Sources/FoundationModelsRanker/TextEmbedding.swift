@@ -8,9 +8,10 @@
 ///
 /// Abstracts over the concrete embedding backend so callers depend on this
 /// narrow protocol rather than a specific implementation: conformers embed
-/// a batch of texts; tests substitute a deterministic double.
-/// `RoutedEmbedderAdapter` wraps FoundationModelsRouter's `RoutedEmbedder`
-/// for production use.
+/// a batch of texts; tests substitute a deterministic double. The caller
+/// supplies the conformer: this package ships no embedder of its own, and
+/// `dimension` and `embed(_:)` are the whole contract a caller writes
+/// against.
 public protocol TextEmbedding: Sendable {
     /// The length of every embedding vector this embedder produces.
     var dimension: Int { get }

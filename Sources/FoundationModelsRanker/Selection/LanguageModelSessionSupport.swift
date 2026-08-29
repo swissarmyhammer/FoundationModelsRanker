@@ -1,10 +1,10 @@
 // New to FoundationModelsRanker (plan.md §3a, §6 phase 3) -- no source file to port: neither
 // CodeContextKit nor FoundationModelsMetadataRegistry ever drove
 // `LanguageModelSession` directly through a selection seam (plan.md §1: FMR's
-// own selection tier only ever wraps FoundationModelsRouter's
-// `RoutedSession`). This is the retroactive conformance §3a promises: any
+// own selection tier only ever wrapped an external session type). This is the
+// retroactive conformance §3a promises: any
 // FoundationModels model -- `.default`, an adapter-loaded model, or a future
-// preset -- plugs into `AgentSession` without a Router dependency, so a
+// preset -- plugs into `AgentSession` with no external dependency, so a
 // `LanguageModelSession(model:instructions:)` call type-checks anywhere an
 // `AgentSession` is expected. Concretely, that's two call shapes:
 //   - `SelectionConfig.model`'s current seam, `@Sendable (String, Grammar) ->
@@ -76,8 +76,8 @@ extension LanguageModelSession: AgentSession {
 
     /// Forks this session for a new call.
     ///
-    /// `LanguageModelSession` has no native fork/branch primitive to mirror
-    /// `RoutedSession.fork(workingDirectory:)`'s KV-cache-copy semantics
+    /// `LanguageModelSession` has no native fork/branch primitive that copies
+    /// a filled KV cache, which is what `AgentSession.fork()` describes
     /// (plan.md §7 risk), and there is no way to reconstruct an equivalent
     /// fresh session generically from within this conformance. The original
     /// `instructions` text *is* recoverable after construction -- it's the
@@ -93,14 +93,14 @@ extension LanguageModelSession: AgentSession {
     /// Tradeoff: every `fork()` on a plain `LanguageModelSession` shares one
     /// running transcript, so repeated `SelectionTier` calls against the
     /// same cached root accumulate turns rather than branching into
-    /// isolated children -- unlike `RoutedAgentSession`, whose `fork()`
-    /// really does copy a prefilled KV cache per call. Long-running,
-    /// high-call-volume selection over a plain `LanguageModelSession` will
-    /// eventually grow its context. Callers who need true per-call isolation
-    /// should either pass a `session:` factory that constructs a **fresh**
+    /// isolated children -- unlike a conformer whose `fork()` really does
+    /// copy a prefilled KV cache per call. Long-running, high-call-volume
+    /// selection over a plain `LanguageModelSession` will eventually grow
+    /// its context. Callers who need true per-call isolation should either
+    /// pass a `session:` factory that constructs a **fresh**
     /// `LanguageModelSession` per top-level call (accepting the re-prefill
-    /// cost `RoutedSession.fork(workingDirectory:)` exists to avoid), or use
-    /// `RoutedAgentSession` for real fork semantics.
+    /// cost a real fork exists to avoid), or supply a conformer whose own
+    /// `fork()` gives real fork semantics.
     ///
     /// - Returns: `self`.
     public func fork() async throws -> any AgentSession {

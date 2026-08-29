@@ -60,6 +60,27 @@ struct AgentSessionDispatchTests {
         #expect(matches.map(\.id) == [PathMarkingAgentSession.typedPathID])
     }
 
+    // MARK: - The protocol defaults a minimal conformer inherits
+
+    @Test
+    func aConformerWithOnlyRespondToInheritsTheDefaultFork() async throws {
+        let session: any AgentSession = PlainTextOnlyAgentSession()
+
+        let forked = try await session.fork()
+
+        let answer = try await forked.respond(to: "prompt")
+        #expect(answer == PlainTextOnlyAgentSession.answer)
+    }
+
+    @Test
+    func aConformerWithOnlyRespondToInheritsTheDefaultTypedRespond() async throws {
+        let session: any AgentSession = PlainTextOnlyAgentSession()
+
+        let selection = try await session.respond(to: "prompt", generating: Selection.self)
+
+        #expect(selection.ids == [PlainTextOnlyAgentSession.selectedID])
+    }
+
     // MARK: - Live on-device model, gated
 
     /// A bare `LanguageModelSession` must reach its native guided generation
@@ -119,5 +140,28 @@ private struct PathMarkingAgentSession: AgentSession {
     /// Answers with a decoded selection of `typedPathID`.
     func respond<T: Generable>(to prompt: String, generating type: T.Type) async throws -> T {
         try T(GeneratedContent(json: #"{"ids":["\#(Self.typedPathID)"]}"#))
+    }
+}
+
+/// An `AgentSession` conformer that implements `respond(to:)` and nothing
+/// else, so a test can read what the protocol's own defaults do.
+///
+/// Every other double in this target overrides `fork()`, and
+/// `PathMarkingAgentSession` above overrides the typed `respond` as well, so
+/// none of them can answer this question. This one is the smallest conformer
+/// the protocol admits, which is what a caller writes against
+/// `AgentSession` when it has no KV cache to fork and no native guided
+/// generation to reach.
+private struct PlainTextOnlyAgentSession: AgentSession {
+    /// The id `answer` selects.
+    static let selectedID = "plain-only"
+
+    /// The whole text `respond(to:)` returns, verbatim: a JSON selection of
+    /// `selectedID`, which is what the default `respond(to:generating:)`
+    /// decodes.
+    static let answer = #"{"ids":["\#(Self.selectedID)"]}"#
+
+    func respond(to prompt: String) async throws -> String {
+        Self.answer
     }
 }

@@ -37,8 +37,8 @@ import FoundationModels
 /// (every item's `text` is embedded once, here, at `init`); `session:`
 /// swaps the selection model -- defaults to the on-device system model, and
 /// is never hardcoded beyond that default, since any closure returning an
-/// `AgentSession` (a `LanguageModelSession` factory, or a
-/// `RoutedAgentSession` factory for Router users) plugs in identically;
+/// `AgentSession` (a `LanguageModelSession` factory, or a factory for a
+/// conformer the caller writes) plugs in identically;
 /// `weights:`, `preamble:`, `candidateLimit:` tune the retrieval and
 /// selection tiers directly; `mode:` picks which tier answers
 /// `search(_:limit:)`.
@@ -115,7 +115,8 @@ public struct Searcher: Sendable {
     ///     of the signal, so that combination reports nothing).
     ///   - session: creates a selection session seeded with the assembled
     ///     candidate prefix -- the seam that plugs in any
-    ///     `LanguageModelSession` model or a `RoutedAgentSession` factory,
+    ///     `LanguageModelSession` model, or any other `AgentSession`
+    ///     conformer the caller writes -- and is
     ///     never hardcoded. Defaults to the on-device system model; pass
     ///     `nil` explicitly to leave selection unavailable (`mode:
     ///     .selection` then throws `SelectionTierUnavailable`; `.auto`

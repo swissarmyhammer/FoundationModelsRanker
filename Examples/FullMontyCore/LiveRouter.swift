@@ -102,10 +102,72 @@ public func runLiveFullMontyDemo(
     onDiagnostic: @escaping @Sendable (RankDiagnostic) -> Void = { _ in }
 ) async throws -> [FullMontyResult] {
     let profile = try await resolveLiveFullMontyProfile()
-    let embedder: any TextEmbedding = RoutedEmbedderAdapter(routedEmbedder: profile.embedding)
+    let embedder: any TextEmbedding = RoutedEmbedderTextEmbedding(routedEmbedder: profile.embedding)
     let grammar = try SelectionTier.idEnumGrammar(ids: toolCatalog.map(\.id))
     let session: @Sendable (String) -> any AgentSession = { instructions in
-        RoutedAgentSession(session: profile.standard.makeGuidedSession(grammar: grammar, instructions: instructions))
+        RoutedSessionAgentSession(session: profile.standard.makeGuidedSession(grammar: grammar, instructions: instructions))
     }
     return try await runFullMontyDemo(embedder: embedder, session: session, mode: .auto, onDiagnostic: onDiagnostic)
+}
+
+// MARK: - The two adapters a Router user writes
+
+// The library used to ship these two adapters. It does not any more.
+// `AgentSession` and `TextEmbedding` stay public, and each has two members,
+// so a caller that has a session type or an embedder type of its own writes
+// the adapter beside that type. This file is such a caller. What follows is
+// the whole of what the library removed: a pure forward on each member, with
+// no state and no logic.
+
+/// Adapts a Router `RoutedSession` to the `AgentSession` seam.
+///
+/// A thin wrapper, not a reimplementation: each call forwards to the wrapped
+/// session with no change. `RoutedSession` is itself an `Actor`-bound
+/// protocol, so this struct only holds the existential and awaits across it.
+private struct RoutedSessionAgentSession: AgentSession {
+    /// The Router session each call forwards to.
+    let session: any RoutedSession
+
+    /// Sends `prompt` to the wrapped Router session and returns its
+    /// response.
+    ///
+    /// - Parameter prompt: the prompt to respond to.
+    /// - Returns: the wrapped session's complete text response.
+    /// - Throws: whatever the wrapped `RoutedSession` throws.
+    func respond(to prompt: String) async throws -> String {
+        try await session.respond(to: prompt)
+    }
+
+    /// Forks the wrapped Router session and wraps the forked child.
+    ///
+    /// Forwards to `RoutedSession.fork(workingDirectory:)` with `nil`: this
+    /// demo never needs to steer a fork's working directory.
+    ///
+    /// - Returns: a new adapter that wraps the forked child.
+    /// - Throws: whatever the wrapped `RoutedSession` throws while forking.
+    func fork() async throws -> any AgentSession {
+        RoutedSessionAgentSession(session: try await session.fork(workingDirectory: nil))
+    }
+}
+
+/// Adapts a Router `RoutedEmbedder` to the `TextEmbedding` seam.
+///
+/// `RoutedEmbedder` already has `dimension` and `embed(texts:)` with exactly
+/// `TextEmbedding`'s shape and semantics, so both members forward straight
+/// to the wrapped handle.
+private struct RoutedEmbedderTextEmbedding: TextEmbedding {
+    /// The Router embedding handle each member forwards to.
+    let routedEmbedder: RoutedEmbedder
+
+    var dimension: Int { routedEmbedder.dimension }
+
+    /// Embeds each input string into a `dimension`-length vector, in order.
+    ///
+    /// - Parameter texts: the strings to embed.
+    /// - Returns: one `dimension`-length vector per input, in the same order
+    ///   as `texts`.
+    /// - Throws: whatever `RoutedEmbedder.embed(texts:)` throws.
+    func embed(_ texts: [String]) async throws -> [[Float]] {
+        try await routedEmbedder.embed(texts: texts)
+    }
 }

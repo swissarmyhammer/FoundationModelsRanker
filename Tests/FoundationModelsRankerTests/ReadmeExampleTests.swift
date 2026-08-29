@@ -78,8 +78,8 @@ struct ReadmeExampleTests {
 
     /// README's "full monty" variant -- `embedder:` joins the cosine signal
     /// alongside a custom `session:` -- still just two more arguments,
-    /// proven here with `FakeEmbedder` standing in for
-    /// `RoutedEmbedderAdapter` (which needs a live Router to construct).
+    /// proven here with `FakeEmbedder` standing in for the real embedder a
+    /// caller supplies (which needs a live model to construct).
     @Test("Configuring embedder: alongside session: adds the cosine signal without reporting a degradation diagnostic")
     func embedderAndSessionArgumentsBothThreadThrough() async throws {
         let items = [
