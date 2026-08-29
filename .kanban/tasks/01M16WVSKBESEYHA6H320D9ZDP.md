@@ -56,10 +56,34 @@ comments:
     - evidence: 4 files — Examples/FullMontyCore/LiveRouter.swift (deleted, 173 lines), Examples/FullMontyCore/Demo.swift (the two gate symbols added, two stale doc comments corrected), Examples/FullMonty/main.swift (the gated branch and its message deleted, header now names two paths), Tests/FoundationModelsRankerTests/ExamplesSmokeTests.swift (suite doc corrected, two tests added for the moved gate). `swift build`: complete. `swift test`: 243 tests in 20 suites passed, 0 failures. `swift run FullMonty --no-model`: ranked results, exit 0. `grep -rn "FoundationModelsRouter\|MLX\|HuggingFace\|Tokenizers" Examples/`: no match.
     - next: `/review`. Read the deviation declared in the comment above — the doc PROSE of the two moved symbols was rewritten, not copied word for word.
   timestamp: 2026-08-29T14:31:03.485537+00:00
+- actor: claude-code
+  id: 01m16zaxpa8hztfwm2t8m1fvvs
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit `9cb5dbf`) — 0 findings, 0 confirmed, 0 refuted, 7 checks made, 0 failed. The engine read 4 files. It did not read the 4 `.kanban/` files, because an ignore rule holds them out.
+    - declined checks: 3 tool rules (`function-length-swift`, `magic-numbers-swift`, `missing-docs-swift`) declined one item each. All 3 name `Examples/FullMontyCore/LiveRouter.swift`, which this change deletes. A deleted file has no code to read, thus these are not findings.
+    - deviation judged — the new doc text is correct. The card told the implementer to move `foundationModelsRankerIntegrationEnvVar` and `isFoundationModelsRankerIntegrationEnabled` "without a change". The implementer copied the two declarations word for word, but wrote new doc prose. The new prose is true:
+      - Only one caller reads the gate now: `Tests/FoundationModelsRankerTests/AgentSessionDispatchTests.swift:92`, in an `@Test(.enabled(if:))` trait. That test needs a live Apple Intelligence model. Thus "the environment variable that enables the gated tests" is correct and complete.
+      - `Examples/FullMonty/main.swift` no longer reads either symbol. Thus the old prose, which named a "gated real-model path", would be false after this change.
+      - `runDefaultDemo`'s new doc says "Run with no flags". This agrees with `main.swift`, which now has one `--no-model` branch and one `else` branch.
+      - The card also told the implementer to correct the file header. `Demo.swift` no longer says that `FullMonty` has three paths. It says two.
+    - out of scope, as the card states: `Package.swift` still names the Router packages (card `^2q0p8gr` owns the manifest), and `README.md` still names the deleted path (card `^jdw7sf0` owns the README).
+    - next: commit.
+  timestamp: 2026-08-29T14:38:47.498829+00:00
+- actor: claude-code
+  id: 01m16zbm0ee8xa8852ffqttb3m
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 4 files; LiveRouter.swift deleted (173 lines), the two gate symbols moved to Demo.swift, main.swift down to two paths, two gate tests added
+    - test: green — swift test, 243 passed, 0 failed, 1 documented gated skip; swift run FullMonty --no-model exits 0
+    - commit: 9cb5dbf — 8 files changed, 156 insertions, 210 deletions
+    - review: clean — zero findings; the declared doc-comment deviation was judged accurate
+    - next: none — task is in done
+  timestamp: 2026-08-29T14:39:10.350678+00:00
 depends_on:
 - 01M16WV88B4043AXS1XY2ZNSQB
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '9580'
 title: Delete the live-Router path from the FullMonty example
 ---
 ## What

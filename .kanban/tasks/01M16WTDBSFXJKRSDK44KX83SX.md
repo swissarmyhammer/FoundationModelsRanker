@@ -1,6 +1,8 @@
 ---
 assignees:
 - claude-code
+depends_on:
+- 01M17004BEPEN2YVD6MG69HYYC
 position_column: todo
 position_ordinal: '80'
 title: Remove the Grammar argument from the selection session seam

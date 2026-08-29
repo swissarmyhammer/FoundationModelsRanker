@@ -34,10 +34,10 @@ public typealias FullMontyResult = (query: String, matches: [SelectionMatch])
 /// Runs all demo queries against the catalog through a Searcher built from provided ingredients.
 ///
 /// Runs every `demoQueries` entry against `toolCatalog` through a `Searcher`
-/// built from the given ingredients — the shared plumbing both of
-/// `FullMonty`'s paths (`--no-model`, and the default on-device-system-model
-/// path) drive through. The two paths differ only in the `embedder` and the
-/// `session` they supply.
+/// built from the given ingredients — the shared plumbing all three of
+/// `FullMonty`'s paths (`--no-model`, `--embedder`, and the default
+/// on-device-system-model path) drive through. The three paths differ only
+/// in the `embedder`, the `session`, and the `mode` they supply.
 ///
 /// - Parameters:
 ///   - embedder: embeds `toolCatalog` and every query for the cosine signal,
@@ -88,6 +88,31 @@ public func runNoModelDemo(
     onDiagnostic: @escaping @Sendable (RankDiagnostic) -> Void = { _ in }
 ) async throws -> [FullMontyResult] {
     try await runFullMontyDemo(embedder: nil, session: nil, mode: .retrieval, onDiagnostic: onDiagnostic)
+}
+
+/// `--embedder`'s GPU-free path: retrieval with the cosine signal switched on.
+///
+/// The same keyword-only retrieval `--no-model` runs, plus a `DemoEmbedder`
+/// — so BM25, trigram, and cosine all carry data, and `.embeddingUnavailable`
+/// never fires. `mode: .retrieval` and `session: nil` keep the path free of
+/// a model: cosine is a retrieval-tier signal, so the tier that shows it
+/// needs no selection session at all, and the path stays GPU-free,
+/// network-free, and fast enough for `ExamplesSmokeTests` to drive
+/// directly.
+///
+/// - Parameter onDiagnostic: called for every diagnostic `Searcher` emits.
+///   This path emits none: an embedder is configured, so the
+///   `.embeddingUnavailable` degradation `--no-model` reports on every
+///   query cannot happen here.
+/// - Returns: one `FullMontyResult` per `demoQueries` entry, in order.
+/// - Throws: whatever `runFullMontyDemo(embedder:session:mode:limit:onDiagnostic:)`
+///   throws.
+public func runEmbedderDemo(
+    onDiagnostic: @escaping @Sendable (RankDiagnostic) -> Void = { _ in }
+) async throws -> [FullMontyResult] {
+    try await runFullMontyDemo(
+        embedder: DemoEmbedder(), session: nil, mode: .retrieval, onDiagnostic: onDiagnostic
+    )
 }
 
 /// The default path: keyword-only retrieval with real agent selection on the on-device system model.

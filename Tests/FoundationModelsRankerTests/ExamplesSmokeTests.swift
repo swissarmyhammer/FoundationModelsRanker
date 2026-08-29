@@ -10,8 +10,9 @@ import Testing
 /// FoundationModelsMetadataRegistry's own `ExamplesSmokeTests` drives its
 /// `*Core` targets through. These tests import `FullMontyCore` directly and
 /// assert on real output — no `swift run` subprocess spawning — covering
-/// every GPU-free path: `--no-model` (`runNoModelDemo`) and the selection
-/// tier driven by a scripted `AgentSession` fake
+/// every GPU-free path: `--no-model` (`runNoModelDemo`), `--embedder`
+/// (`runEmbedderDemo`), and the selection tier driven by a scripted
+/// `AgentSession` fake
 /// (`Support/ScriptedAgentSession.swift`, already shared by `SearcherTests`
 /// and the selection-tier suites). `FullMontyCore`'s default path needs the
 /// on-device system model, so only `swift run FullMonty` exercises it
@@ -90,6 +91,37 @@ struct ExamplesSmokeTests {
         printResults(results)
 
         #expect(toolCatalog.count >= 50)
+    }
+
+    // MARK: - `--embedder`: retrieval with the cosine signal, GPU-free (acceptance criterion)
+
+    @Test("--embedder answers every demo query")
+    func embedderDemoAnswersEveryDemoQuery() async throws {
+        let results = try await runEmbedderDemo()
+
+        #expect(results.count == demoQueries.count)
+        for result in results {
+            #expect(!result.matches.isEmpty)
+        }
+    }
+
+    @Test("--embedder reports no embeddingUnavailable, since DemoEmbedder supplies the cosine signal")
+    func embedderDemoReportsNoEmbeddingUnavailableDiagnostic() async throws {
+        let recorder = DiagnosticRecorder()
+
+        _ = try await runEmbedderDemo(onDiagnostic: { recorder.record($0) })
+
+        #expect(!recorder.diagnostics.contains(.embeddingUnavailable))
+    }
+
+    @Test("--embedder ranks a real, non-zero cosine into every match's signals")
+    func embedderDemoRanksANonZeroCosine() async throws {
+        let results = try await runEmbedderDemo()
+
+        let commitResult = try result(containing: "staged changes", in: results)
+        let first = try #require(commitResult.matches.first)
+        let signals = try #require(first.signals)
+        #expect(signals.cosine > 0.0)
     }
 
     // MARK: - Selection path, driven by a scripted fake session (acceptance criterion)
