@@ -6,24 +6,50 @@ access level, then searches the consumer tree for each name.
 import re
 import subprocess
 import sys
+from pathlib import Path
 
-"""
+USAGE = """\
 Usage:
-    symbolmap.py [PROVIDER_REPO] [CONSUMER_REPO] [REV] [SOURCES_SUBPATH]
+    symbolmap.py [PROVIDER_REPO] CONSUMER_REPO [REV] [SOURCES_SUBPATH]
+    symbolmap.py CONSUMER_REPO
 
-PROVIDER_REPO is the package whose surface is shrinking, CONSUMER_REPO the
-package that might name it. Both default to the router and the multitool.
+PROVIDER_REPO is the package whose surface is shrinking. It defaults to the
+repository that holds this script, so a run from inside that repository needs
+only CONSUMER_REPO.
+
+CONSUMER_REPO is the package that might name the provider's symbols. It has no
+default: a guessed consumer reports a clean result for a package nobody asked
+about, which reads the same as a real all-clear.
+
+REV is the provider revision to read, and it defaults to HEAD. SOURCES_SUBPATH
+is the consumer subdirectory to search, and it defaults to Sources.
 """
-PROVIDER = (
-    sys.argv[1] if len(sys.argv) > 1
-    else "/Users/wballard/github/swissarmyhammer/FoundationModelsRouter"
-)
-CONSUMER = (
-    sys.argv[2] if len(sys.argv) > 2
-    else "/Users/wballard/github/swissarmyhammer/FoundationModelsMultitool"
-)
-REV = sys.argv[3] if len(sys.argv) > 3 else "main"
-SOURCES = sys.argv[4] if len(sys.argv) > 4 else "Sources"
+
+# The script sits at <repository>/scripts/symbolmap.py, so the repository is
+# two levels up. `resolve()` first, because `__file__` is relative when the
+# script runs through a relative path.
+DEFAULT_PROVIDER = Path(__file__).resolve().parent.parent
+
+args = sys.argv[1:]
+if not args or args[0] in ("-h", "--help"):
+    print(USAGE, end="")
+    raise SystemExit(0 if args else 2)
+
+# One argument names the consumer, and the provider stays this repository.
+# Two or more keep the documented positional order.
+if len(args) == 1:
+    PROVIDER, CONSUMER, rest = str(DEFAULT_PROVIDER), args[0], []
+else:
+    PROVIDER, CONSUMER, rest = args[0], args[1], args[2:]
+
+REV = rest[0] if rest else "HEAD"
+SOURCES = rest[1] if len(rest) > 1 else "Sources"
+
+for label, path in (("PROVIDER_REPO", PROVIDER), ("CONSUMER_REPO", CONSUMER)):
+    if not (Path(path) / ".git").exists():
+        print(f"{label} is not a git repository: {path}\n", file=sys.stderr)
+        print(USAGE, end="", file=sys.stderr)
+        raise SystemExit(2)
 
 DECL = re.compile(
     r"^\s*(?:@\w+\s+)*(public|open|package|internal|private|fileprivate)?\s*"
