@@ -48,8 +48,28 @@ comments:
     - evidence: 3 files — Sources/FoundationModelsRanker/Selection/SelectionConfig.swift, Sources/FoundationModelsRanker/Selection/SelectionTier.swift, Tests/FoundationModelsRankerTests/OverBudgetTests.swift. `swift build` complete, 0 warnings. `swift test` passed, 273 tests in 21 suites, 0 failures.
     - next: /review
   timestamp: 2026-08-29T19:11:22.556452+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m17f4a3v6tcrxghk4j7wqn2j
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 7d1611b) — 0 findings, 0 confirmed, 0 refuted, 7 validators attempted, 0 failed. Index rebuilt with `rm -rf .build/out && swift build --build-tests` (exit 0).
+    - checks: the corrected text agrees with the code. `SelectionTier.assemblePrefix(preamble:ids:catalog:)` builds `preamble` + `\n\n# Candidates\n` + the entries, and `candidateEntry(forID:catalog:)` builds `## <id>` above the summary block. The guard reads `assembledPrefix.count <= config.capacityCharacterLimit`, so it measures the full text, header and headings included.
+    - doc-only: every added or removed line in `Sources/` and `Tests/` is a `///` line. No behavior, no budget value, and no guard changed.
+    - third site: the `SelectionTier` type doc had the same cause. It named the `## <id>` headings but not the `# Candidates` header. The correction adds the header. The two `assemblePrefix` method docs already named the header, so no doc disagrees now.
+    - next: none. Task moved to `done`.
+  timestamp: 2026-08-29T19:14:48.059474+00:00
+- actor: claude-code
+  id: 01m17f5bh671ydqq74yv411dca
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 3 files; the stale "preamble + every candidate's summary block" description corrected in SelectionConfig.capacityCharacterLimit, the SelectionTier type doc, and the OverBudgetTests suite doc
+    - test: green — folded into the implement step's own run, because every changed line is a `///` comment: swift build 0 warnings, swift test 273 passed, 0 failed
+    - commit: 7d1611b — 7 files changed
+    - review: clean — zero findings; the reviewer confirmed all three comments now match the code, that every changed line is a comment line, and that the third unnamed site had the same cause
+    - next: none — task is in done
+  timestamp: 2026-08-29T19:15:22.278089+00:00
+position_column: done
+position_ordinal: 9f80
 title: Update SelectionConfig.capacityCharacterLimit's doc comment to count the candidate id headings
 ---
 ## What
