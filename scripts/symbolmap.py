@@ -32,8 +32,12 @@ DEFAULT_PROVIDER = Path(__file__).resolve().parent.parent
 
 args = sys.argv[1:]
 if not args or args[0] in ("-h", "--help"):
-    print(USAGE, end="")
-    raise SystemExit(0 if args else 2)
+    # The usage text goes to stdout when a user asks for it. It goes to stderr
+    # when it explains an error. A caller that pipes the report then gets the
+    # report only, and never the usage text mixed into it.
+    asked = bool(args)
+    print(USAGE, end="", file=sys.stdout if asked else sys.stderr)
+    raise SystemExit(0 if asked else 2)
 
 # One argument names the consumer, and the provider stays this repository.
 # Two or more keep the documented positional order.
