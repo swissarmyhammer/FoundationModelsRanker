@@ -42,6 +42,68 @@ comments:
     - evidence: 2 files — Tests/FoundationModelsRankerTests/SearcherTests.swift (+1 test), Tests/FoundationModelsRankerTests/Support/CountingEmbedder.swift (failingFromCall knob + CountingEmbedderFailure). swift test: 274 tests, 22 suites, 0 failures, 0 warnings. Searcher.swift coverage 120/125 (96.0%) -> 122/125 (97.6%); lines 440 and 441 each hit 1 time. No production code changed.
     - next: /review
   timestamp: 2026-08-30T13:13:38.127210+00:00
+- actor: claude-code
+  id: 01m19cyf1mpqdzkvtsy7exr56f
+  text: |-
+    ### commit — changed
+    - evidence: 2ddd6f4 test(searcher): cover the query-embed failure path in the cosine signal
+    - next: /review
+  timestamp: 2026-08-30T13:15:08.212610+00:00
+- actor: claude-code
+  id: 01m19dah537z2smgwk66zdjaxt
+  text: |-
+    ### review — findings
+    - evidence: 1 finding (1 confirmed, 1 refuted, 7 attempted) — Tests/FoundationModelsRankerTests/SearcherTests.swift:451. Scope: `review sha HEAD~1..HEAD` (commit 2ddd6f4). The stale Periphery index was removed before the run: `rm -rf .build/out && swift build --build-tests` completed with exit code 0.
+    - merit checks made by hand:
+      - Call order is correct. `Searcher.swift:275` embeds all items in ONE batched `embedder.embed(_:)` call at `init` (call 1). `Searcher.swift:439` embeds the query in ONE call for each search (call 2). Therefore `failingFromCall: 2` lets `init` complete and fails only the query embed. The test lands on lines 440-441, not on the adjacent no-embedder guard at line 436.
+      - The test holds the production branch. If line 440 (`onDiagnostic(.embeddingUnavailable)`) is removed, the assertion at line 455 (`count == 1`) fails. If line 441 (`return nil`) is removed, the cosine assertion at line 453 fails.
+      - The cosine assertion reads a real value. `matches.first?.signals?.cosine == 0.0` compares an optional with `0.0`. A `nil` signals value gives `false` and fails the test. Line 451 asserts `bm25 > 0.0` on the same chain, which proves the signals value is present and holds true numbers. The `0.0` is therefore a read of a real signal, not a value that is true for any input.
+      - The two other `CountingEmbedder` call sites are not affected. `StreamingSearchCorpusTests.swift:196` and `:266` both use `CountingEmbedder(dimension: 8)`. The new parameter defaults to `nil`, and `embed(_:)` then increments the counter and delegates to the wrapped fake, exactly as before. `callCount` keeps the same value.
+      - No production source was changed. `git show --stat 2ddd6f4` lists only two test files and the two kanban files.
+    - next: correct the parentheses on SearcherTests.swift lines 450 and 451, then /review again.
+  timestamp: 2026-08-30T13:21:43.587906+00:00
+- actor: claude-code
+  id: 01m19dbfe2my9wmh638annc6p1
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 2 test files; CountingEmbedder gains `failingFromCall:`, one new test for the query-embed failure path
+    - test: green — folded into the implement step's own run: swift build clean, swift test 274 passed / 0 failed / 0 warnings (was 273), and coverage re-measured with the card's own command sequence
+    - commit: 2ddd6f4 — 4 files changed
+    - review: findings — 1 open, SearcherTests.swift:451 with the same cause at :450
+    - next: implement iteration 2 applies the parentheses to both lines
+
+    Coverage moved as claimed: Searcher.swift 120/125 (96.0%) → 122/125 (97.6%), lines 440-441 from zero hits to one each. The reviewer confirmed the test holds the branch — removing either production line breaks an assertion.
+  timestamp: 2026-08-30T13:22:14.594399+00:00
+- actor: claude-code
+  id: 01m19deatxsvr0dnmjc13xqhb2
+  text: |-
+    Iteration 2. The open finding is corrected, and the same cause is removed from the whole file.
+
+    Scan result: 3 instances of the construct — a nil-coalescing expression used as one side of a comparison, with no parentheses. All 3 are in `Tests/FoundationModelsRankerTests/SearcherTests.swift`:
+
+    - line 172 `#expect(matches.first?.score ?? 0.0 > 0.0)` — in `selectionModeOverBudgetSeedsAOneOffSessionFromRetrievalTopCandidates`. Not named in the finding, corrected because the cause is the same.
+    - line 450 `#expect(matches.first?.score ?? 0.0 > 0.0)`
+    - line 451 `#expect(matches.first?.signals?.bm25 ?? 0.0 > 0.0)`
+
+    Each becomes `#expect((<expression> ?? 0.0) > 0.0)`. Only the grouping changes. `NilCoalescingPrecedence` is declared `higherThan: ComparisonPrecedence`, so each expression already parsed this way; the parentheses make the grouping visible to the reader and change no assertion.
+
+    `Tests/FoundationModelsRankerTests/Support/CountingEmbedder.swift` was read whole: it holds no `??` operator at all, so it holds 0 instances.
+
+    A second grep of the full test target for `??` followed by a comparison operator now finds nothing.
+
+    Counts, before and after the edit, from the same command pair (`swift build` then `swift test`):
+    - before: build complete, 274 tests in 22 suites passed, 0 failures, 0 warnings
+    - after: build complete, 274 tests in 22 suites passed, 0 failures, 0 warnings
+
+    The counts are identical, which shows the edit changed no behavior.
+  timestamp: 2026-08-30T13:23:48.189509+00:00
+- actor: claude-code
+  id: 01m19dees7bswcn54s0h63pp5j
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsRankerTests/SearcherTests.swift. 3 instances of the construct corrected (lines 172, 450, 451); Support/CountingEmbedder.swift holds 0 instances. swift build clean. swift test before: 274 tests, 22 suites, 0 failures, 0 warnings. swift test after: 274 tests, 22 suites, 0 failures, 0 warnings.
+    - next: /review
+  timestamp: 2026-08-30T13:23:52.231991+00:00
 position_column: doing
 position_ordinal: '8180'
 title: Add tests for the query-embed failure path in Searcher's cosine signal
@@ -80,3 +142,18 @@ The test target already has embedder doubles in `Tests/FoundationModelsRankerTes
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #coverage-gap
+
+## Review Findings (2026-08-30 08:16)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 2 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Tests/FoundationModelsRankerTests/SearcherTests.swift:451` `swift/idioms` — Same operator precedence issue as line 450: `??` has lower precedence than `>`, so this expression parses as `matches.first?.signals?.bm25 ?? (0.0 > 0.0)`, attempting to use a `Bool` as the default for an optional `Double`. Wrap the nil-coalescing in parentheses: `#expect((matches.first?.signals?.bm25 ?? 0.0) > 0.0)`.
+
+### Notes for the implementer
+
+- The finding gives one example of a cause. The same construct is on line 450. Correct both lines, not only line 451.
+- The reason text in the finding is not correct. In Swift, `NilCoalescingPrecedence` is declared `higherThan: ComparisonPrecedence`, so `a ?? 0.0 > 0.0` parses as `(a ?? 0.0) > 0.0`. A compiled check gives type `Bool` and value `true`, and the test target builds. The code is therefore correct today.
+- The suggested correction is still safe and makes the code easier to read. Add the parentheses on both lines. Do not change what the test asserts.

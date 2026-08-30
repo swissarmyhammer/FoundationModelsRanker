@@ -169,7 +169,7 @@ struct SearcherTests {
         // Retrieval genuinely ran to rank "alpha" first -- the over-budget
         // path's results carry the real fused score/signals of this round's
         // top candidates.
-        #expect(matches.first?.score ?? 0.0 > 0.0)
+        #expect((matches.first?.score ?? 0.0) > 0.0)
         #expect(matches.first?.signals != nil)
         // One-off session per call: calling search() twice re-invokes the
         // factory, unlike the cached-root under-budget path.
@@ -447,8 +447,8 @@ struct SearcherTests {
         // Keyword retrieval still answers: the failed query embed degrades the
         // search, and does not throw it away or empty it.
         #expect(matches.first?.id == "grep")
-        #expect(matches.first?.score ?? 0.0 > 0.0)
-        #expect(matches.first?.signals?.bm25 ?? 0.0 > 0.0)
+        #expect((matches.first?.score ?? 0.0) > 0.0)
+        #expect((matches.first?.signals?.bm25 ?? 0.0) > 0.0)
         // A zero cosine tells the caller the signal did not contribute.
         #expect(matches.first?.signals?.cosine == 0.0)
         // One search reports the degradation one time.
