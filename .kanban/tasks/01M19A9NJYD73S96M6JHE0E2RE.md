@@ -104,8 +104,31 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsRankerTests/SearcherTests.swift. 3 instances of the construct corrected (lines 172, 450, 451); Support/CountingEmbedder.swift holds 0 instances. swift build clean. swift test before: 274 tests, 22 suites, 0 failures, 0 warnings. swift test after: 274 tests, 22 suites, 0 failures, 0 warnings.
     - next: /review
   timestamp: 2026-08-30T13:23:52.231991+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m19dm4tpya7e8ez3c58rj0n1
+  text: |
+    ### review — clean
+    - evidence: zero new findings (0 findings, 0 confirmed, 0 refuted, 7 attempted, 0 failed). Scope: `review sha HEAD~1..HEAD` (commit 6a53f8a). The stale index was removed before the run: `rm -rf .build/out && swift build --build-tests` gave exit code 0.
+    - prior finding: the item for `SearcherTests.swift:451` is checked and the correction is in the commit. The same cause is removed from the whole file, at lines 172, 450 and 451.
+    - merit checks made by hand:
+      - The change is grouping only. `git show HEAD -- Sources Tests` gives 3 changed line pairs, all in `Tests/FoundationModelsRankerTests/SearcherTests.swift`. Each pair moves `X ?? 0.0 > 0.0` to `(X ?? 0.0) > 0.0`. No assertion, no operand and no comparison operator changed.
+      - No production source changed. `git show --stat HEAD` lists one test file and the two kanban files only.
+      - The suite counts are the same. `swift test` reports 274 tests in 22 suites, 0 failures, exit code 0. This equals the count before the change, so no assertion changed its meaning.
+      - The cause is gone from the whole test target. A grep of `Tests/` for a nil-coalescing operator next to a comparison operator finds nothing.
+    - next: task is done
+  timestamp: 2026-08-30T13:26:58.646661+00:00
+- actor: claude-code
+  id: 01m19dmphqwmfyn6vchfxn2wf6
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — SearcherTests.swift; parentheses added at 3 sites (172, 450, 451), grouping only
+    - test: green — swift test 274 passed / 0 failed / 0 warnings, identical to before the change, which is what proves no assertion changed meaning
+    - commit: 6a53f8a4 — 3 files changed
+    - review: clean — zero findings; the prior finding is resolved and the cause is gone from the whole test target
+    - next: none — task is in done
+  timestamp: 2026-08-30T13:27:16.791942+00:00
+position_column: done
+position_ordinal: a180
 title: Add tests for the query-embed failure path in Searcher's cosine signal
 ---
 ## What

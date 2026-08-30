@@ -34,6 +34,49 @@ struct StreamingSearchCorpusTests {
 
     static var allItems: [SearchItem] { runAItems + runBItems }
 
+    /// One item whose summary is deliberately different from its text, so a
+    /// `summaryBlock(forID:)` answer cannot be mistaken for a
+    /// `block(forID:)` answer.
+    static let summarizedItem = SearchItem(
+        id: "s1",
+        text: "the full transcript entry that retrieval indexes",
+        summary: "a short entry summary"
+    )
+
+    /// The 1-indexed `embed(_:)` call the first `search(_:limit:)` on a
+    /// corpus from `streamedRunACorpus(embedder:onDiagnostic:)` spends on its
+    /// query.
+    ///
+    /// `add(items:)` embeds the items one call adds in a single batched call,
+    /// so streaming `runAItems` one item at a time takes one call for each
+    /// item, and the query embed is the call after those. `Searcher`'s
+    /// ordering is different -- it embeds every item in one call at `init`,
+    /// so its query embed is call 2 -- which is why a `Searcher` test cannot
+    /// stand in for the tests below.
+    static let firstStreamedQueryEmbedCall = runAItems.count + 1
+
+    /// Builds a corpus the way a streaming producer fills one -- `runAItems`
+    /// added one item for each `add(items:)` call, never as one batch -- so
+    /// the item embeds take calls 1 through `runAItems.count` and
+    /// `firstStreamedQueryEmbedCall` is the call after them.
+    ///
+    /// - Parameters:
+    ///   - embedder: embeds each added item at add time, and the query at
+    ///     each search.
+    ///   - onDiagnostic: called for every diagnostic the corpus emits.
+    ///     Defaults to doing nothing.
+    /// - Returns: the corpus, with every `runAItems` item already added.
+    static func streamedRunACorpus(
+        embedder: any TextEmbedding,
+        onDiagnostic: @escaping @Sendable (RankDiagnostic) -> Void = { _ in }
+    ) async -> StreamingSearchCorpus {
+        let actorCorpus = StreamingSearchCorpus(embedder: embedder, onDiagnostic: onDiagnostic)
+        for item in runAItems {
+            await actorCorpus.add(items: [item])
+        }
+        return actorCorpus
+    }
+
     // MARK: - Single-threaded equivalence through the actor surface
 
     @Test
@@ -105,6 +148,32 @@ struct StreamingSearchCorpusTests {
         let actorCorpus = StreamingSearchCorpus()
         let hits = await actorCorpus.search("anything", limit: 10)
         #expect(hits.isEmpty)
+    }
+
+    // MARK: - Selection-catalog lookups through the actor surface
+
+    @Test
+    func theActorServesTheSummaryLookupForALiveRow() async {
+        let actorCorpus = await StreamingSearchCorpus(items: [Self.summarizedItem])
+
+        let summary = await actorCorpus.summaryBlock(forID: Self.summarizedItem.id)
+        let block = await actorCorpus.block(forID: Self.summarizedItem.id)
+
+        // A row keeps both fields, and the two lookups never answer with each
+        // other's: the summary seeds the selection prefix, and the full text
+        // stays what `block(forID:)` answers.
+        #expect(summary == Self.summarizedItem.summary)
+        #expect(block == Self.summarizedItem.text)
+    }
+
+    @Test
+    func theActorAnswersTheSummaryLookupWithNilOnceTheRowIsEvicted() async {
+        let actorCorpus = await StreamingSearchCorpus(items: [Self.summarizedItem])
+        await actorCorpus.remove(ids: [Self.summarizedItem.id])
+
+        let summary = await actorCorpus.summaryBlock(forID: Self.summarizedItem.id)
+
+        #expect(summary == nil)
     }
 
     // MARK: - Concurrent stress
@@ -390,6 +459,91 @@ struct StreamingSearchCorpusTests {
         #expect(!matches.isEmpty)
         #expect(matches.allSatisfy { $0.signals?.cosine == 0.0 })
         #expect(recorder.diagnostics.contains(.embeddingUnavailable))
+    }
+
+    // MARK: - Degradation: the query embed fails at search time
+
+    /// The streaming corpus's own copy of the query-embed failure branch --
+    /// the one a `Searcher` test cannot reach, because each type embeds on
+    /// its own schedule and holds its own guard.
+    ///
+    /// Every item is embedded and stored first, so
+    /// `cosineScores(forQuery:snapshot:)` passes its row-completeness check
+    /// and reaches the query embed, which is then the first call that throws.
+    /// The degradation is therefore attributable to the query embed alone.
+    ///
+    /// The second search shows the corpus takes the decision again for each
+    /// search rather than latching after the first: it reports its own
+    /// diagnostic, and it still ranks.
+    @Test
+    func aFailedQueryEmbedDegradesTheStreamingSearchToKeywordOnlyAndReportsTheDiagnosticOncePerSearch() async {
+        let recorder = DiagnosticRecorder()
+        let embedder = CountingEmbedder(dimension: 8, failingFromCall: Self.firstStreamedQueryEmbedCall)
+        let actorCorpus = await Self.streamedRunACorpus(embedder: embedder, onDiagnostic: { recorder.record($0) })
+
+        // Each item was embedded at add time, and every one of those calls
+        // succeeded: the next call is the query embed below.
+        #expect(embedder.callCount == Self.runAItems.count)
+
+        let query = "the parser failed to tokenize the config file"
+        let matches = await actorCorpus.search(query, limit: 10)
+
+        // Keyword ranking still answers: the failed query embed drops the
+        // cosine signal for this search, it does not empty the result.
+        #expect(!matches.isEmpty)
+        #expect((matches.first?.signals?.bm25 ?? 0.0) > 0.0)
+        #expect((matches.first?.score ?? 0.0) > 0.0)
+        // A zero cosine tells the caller the signal did not contribute.
+        #expect(matches.allSatisfy { $0.signals?.cosine == 0.0 })
+        #expect(recorder.diagnostics.filter { $0 == .embeddingUnavailable }.count == 1)
+
+        let laterMatches = await actorCorpus.search(query, limit: 10)
+
+        #expect(laterMatches.map(\.id) == matches.map(\.id))
+        #expect(recorder.diagnostics.filter { $0 == .embeddingUnavailable }.count == 2)
+    }
+
+    /// The failure belongs to the one search whose query embed threw, and not
+    /// to the corpus that search ran against: `add(items:)`'s stored item
+    /// vectors come through it untouched, so the same items and the same
+    /// query score a real cosine again as soon as the query embed works.
+    /// That is the difference between a transient failure and a permanent
+    /// one.
+    ///
+    /// The recovering search runs on a second corpus, streamed exactly the
+    /// same way, because one `CountingEmbedder` throws from
+    /// `failingFromCall` onward and a corpus keeps the embedder it was built
+    /// with for its whole life. The same-corpus half of the claim -- that the
+    /// corpus keeps ranking and reports again for each later search -- is
+    /// asserted in
+    /// `aFailedQueryEmbedDegradesTheStreamingSearchToKeywordOnlyAndReportsTheDiagnosticOncePerSearch`.
+    @Test
+    func aLaterSearchWithAWorkingEmbedderRecoversTheCosineSignalTheFailedQueryEmbedDropped() async throws {
+        let query = "the parser failed to tokenize the config file"
+        let failingEmbedder = CountingEmbedder(dimension: 8, failingFromCall: Self.firstStreamedQueryEmbedCall)
+        let degradedCorpus = await Self.streamedRunACorpus(embedder: failingEmbedder)
+
+        let degradedMatches = await degradedCorpus.search(query, limit: 10)
+
+        #expect(!degradedMatches.isEmpty)
+        #expect(degradedMatches.allSatisfy { $0.signals?.cosine == 0.0 })
+
+        let workingEmbedder = FakeEmbedder(dimension: 8)
+        let recoveredCorpus = await Self.streamedRunACorpus(embedder: workingEmbedder)
+
+        let recoveredMatches = await recoveredCorpus.search(query, limit: 10)
+
+        // Every recovered match carries the real cosine of its own stored
+        // vector against the query's, and at least one of them is non-zero --
+        // the signal the degraded search above had to do without.
+        #expect(!recoveredMatches.isEmpty)
+        let queryVector = try await workingEmbedder.embed([query])[0]
+        for match in recoveredMatches {
+            let item = try #require(Self.runAItems.first { $0.id == match.id })
+            let itemVector = try await workingEmbedder.embed([item.text])[0]
+            #expect(match.signals?.cosine == CosineScoring.cosineSimilarity(queryVector, itemVector))
+        }
+        #expect(recoveredMatches.contains { ($0.signals?.cosine ?? 0.0) != 0.0 })
     }
 
     /// With an embedder configured, `add(items:)`/`search(_:limit:)` each
