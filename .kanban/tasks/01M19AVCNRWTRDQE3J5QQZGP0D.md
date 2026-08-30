@@ -39,10 +39,97 @@ comments:
 
     - next: the user pushes, then a later step reads `gh run view <id> --json jobs`, confirms two jobs both `success`, and quotes the real-model test name and its pass count from the integration job log.
   timestamp: 2026-08-30T13:06:13.942537+00:00
+- actor: claude-code
+  id: 01m19jyzne7fchqwgqs0wwwgj5
+  text: |-
+    ### CI evidence — the run-level criteria are now met
+
+    Pushed `35447e4..fd1e024`. CI run **33318330212** for `fd1e024`:
+
+    ```
+    RUN: completed success
+    completed  success   ci / Build & test
+    completed  success   ci / Integration (opt-in, real dependencies)
+    ```
+
+    Neither job skipped. Compare the two runs before this change, `33310680821` and `32997172742`, where the integration job was `skipped` — as it had been on every run this repository ever had.
+
+    Unit job log:
+    ```
+    ✔ Test run with 279 tests in 22 suites passed after 0.174 seconds.
+    ```
+
+    Integration job log — the real-model tests genuinely executed on the CI Mac mini, with a non-zero pass count:
+    ```
+    ✔ Test "A bare LanguageModelSession reaches guided generation" passed after 3.877 seconds.
+    ✔ Test "A LanguageModelSession held as any AgentSession answers with plain text" passed after 4.639 seconds.
+    ✔ Test "Searcher(items) with no session argument answers every demo query on a cold session" with 4 test cases passed after 5.104 seconds.
+    ✔ Test "runDefaultDemo answers every demo query on the on-device system model" passed after 6.827 seconds.
+    ✔ Test run with 4 tests in 4 suites passed after 6.828 seconds.
+    ```
+
+    That satisfies every acceptance criterion, including the two that could only be checked by a real run: both jobs green with neither skipped, and the integration job showing the real-model test names with a pass count above zero. The unit job's wall time also stayed in the same order as before.
+
+    Apple Intelligence works on the CI runner. That was the open question when the card was written, and the answer is yes.
+  timestamp: 2026-08-30T15:00:16.686426+00:00
+- actor: claude-code
+  id: 01m19k5fkab0rw79sz5d9wttn7
+  text: |-
+    ### review — clean
+
+    - evidence: `review sha a2a9718~1..a2a9718` gave 0 findings (attempted 1, failed 0, skipped 0). The change adds 4 lines to `.github/workflows/ci.yml`.
+
+    I checked the CI proof again by myself. I did not use the earlier comment as proof.
+
+    **Run 33318330212**
+
+    - Status `completed`, result `success`.
+    - Job `ci / Build & test`: `success`.
+    - Job `ci / Integration (opt-in, real dependencies)`: `success`. This job is not `skipped`.
+    - Head commit `fd1e024`. The command `git merge-base --is-ancestor a2a9718 fd1e024` gives code 0. So the run contains commit `a2a9718`. The file `.github/workflows/ci.yml` at `fd1e024` holds the same `with:` block that `a2a9718` added.
+
+    **The unit job**
+
+    ```
+    swift build --package-path 'IntegrationTests' --build-tests
+    Build complete! (5.12 sec)
+    ✔ Test run with 279 tests in 22 suites passed after 0.174 seconds.
+    ```
+
+    The job time is 22 seconds (14:58:41 to 14:59:03). This time is near the time before the change.
+
+    **The integration job**
+
+    ```
+    ##[group]swift test --package-path IntegrationTests
+    ✔ Test "A bare LanguageModelSession reaches guided generation" passed after 3.877 seconds.
+    ✔ Test "A LanguageModelSession held as any AgentSession answers with plain text" passed after 4.639 seconds.
+    ✔ Test "Searcher(items) with no session argument answers every demo query on a cold session" with 4 test cases passed after 5.104 seconds.
+    ✔ Test "runDefaultDemo answers every demo query on the on-device system model" passed after 6.827 seconds.
+    ✔ Test run with 4 tests in 4 suites passed after 6.828 seconds.
+    ```
+
+    Four tests passed. The count is more than zero. Each test took 3.8 to 6.8 seconds. These times match calls to the real model on the device.
+
+    **The guard**
+
+    - The text `::error::swift test ... matched no test case: this run measured nothing` is in the log one time only, at line 199. That line is part of the script text that GitHub prints before the step starts. The line has the ANSI prefix that GitHub puts on printed script text.
+    - No true `::error::` note and no true `::warning::` note is in the log of the two jobs.
+    - The guard reads the file that holds the output of `swift test`. The text `No matching test cases were run` is not in that output.
+    - So the guard did not fire. The guard was active and the step ran it. The "green but measured nothing" fault is not present.
+
+    **The two runs before the change**
+
+    - Run 33310680821, commit `35447e4`: the integration job is `skipped`. `35447e4` comes before `a2a9718`. Its `ci.yml` has no `with:` block.
+    - Run 32997172742, commit `222e74a`: the integration job is `skipped`. `222e74a` does not contain `a2a9718`. Its `ci.yml` has no `with:` block.
+    - So the input `integration-package-path` is the cause of the new behavior. No other change caused it.
+
+    - next: I did not change the boxes in the description. The skill says the person who owns the card marks them. All four acceptance criteria and both test items now have proof in this comment.
+  timestamp: 2026-08-30T15:03:49.610468+00:00
 depends_on:
 - 01M19ACG799X8YF41B4BA0C6FV
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: a680
 title: Run both the unit and the integration job in CI
 ---
 ## What
