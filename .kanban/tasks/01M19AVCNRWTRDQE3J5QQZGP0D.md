@@ -1,10 +1,48 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m19cc6rq9ed9y3e8mgjpacst
+  text: |-
+    Research done.
+
+    - Blocker `^ba0c6fv` is complete and committed as `d4ef034`. `IntegrationTests/Package.swift` exists and declares the test target `FoundationModelsRankerIntegrationTests`, which depends on the root package by path.
+    - The shared workflow `/Users/wballard/github/swissarmyhammer/workflows/.github/workflows/swift-ci.yaml` declares the input `integration-package-path` (a string, default `""`). Its own description says the UNIT job also builds the nested package on every run, and the integration job runs `swift test --package-path` on it. The integration job's `if` condition includes `inputs.integration-package-path != ''`, so this input alone starts that job.
+    - The comment style comes from the sibling `FoundationModelsMultitool/.github/workflows/ci.yml`, which writes: "The real-model suite is a nested package. This input makes the unit job build it on every run and makes the integration job run it." The other sibling `FoundationModelsCodeContext/.github/workflows/ci.yml` passes the same input with no comment.
+    - No test in this repository pins the workflow file, so no test needs a change.
+  timestamp: 2026-08-30T13:05:09.911211+00:00
+- actor: claude-code
+  id: 01m19ce59pqc5tv689ksttsbqh
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — `.github/workflows/ci.yml`. Added:
+
+    ```yaml
+        with:
+          # The real-model suite is a nested package. This input makes the unit
+          # job build it on every run and makes the integration job run it.
+          integration-package-path: IntegrationTests
+    ```
+
+      The comment is copied from the sibling `FoundationModelsMultitool/.github/workflows/ci.yml`.
+
+    - verified locally:
+      - The YAML parses. `python3 -c "import yaml,json; d=yaml.safe_load(open('.github/workflows/ci.yml')); print(json.dumps(d['jobs'], indent=2))"` prints `"with": {"integration-package-path": "IntegrationTests"}`.
+      - The input name is real. `integration-package-path` is declared at line 128 of `/Users/wballard/github/swissarmyhammer/workflows/.github/workflows/swift-ci.yaml`, and the integration job's `if` condition includes `inputs.integration-package-path != ''`.
+      - The path value is real. `IntegrationTests/Package.swift` exists.
+      - `swift test` at the root: "Test run with 273 tests in 22 suites passed".
+      - `swift build --package-path IntegrationTests --build-tests`: "Build complete!" This is the step the unit job now also runs.
+      - `swift test --package-path IntegrationTests`: `✔ Test "A bare LanguageModelSession reaches guided generation" passed after 1.560 seconds.` / "Test run with 1 test in 1 suite passed". This is the command the integration job runs.
+
+    - NOT verified, and why: the last three Acceptance Criteria and both Tests items need a real CI run, and a CI run needs a push. A push is the user's decision, so this step did not push and did not start a workflow. Those boxes stay unchecked. Only the first criterion is checked, because the diff and the YAML parse prove it without a run.
+
+    - next: the user pushes, then a later step reads `gh run view <id> --json jobs`, confirms two jobs both `success`, and quotes the real-model test name and its pass count from the integration job log.
+  timestamp: 2026-08-30T13:06:13.942537+00:00
 depends_on:
 - 01M19ACG799X8YF41B4BA0C6FV
-position_column: todo
-position_ordinal: '8580'
+position_column: doing
+position_ordinal: '80'
 title: Run both the unit and the integration job in CI
 ---
 ## What
@@ -39,7 +77,7 @@ Add a comment above the input saying what it does and why the nested package exi
 
 ## Acceptance Criteria
 
-- [ ] `.github/workflows/ci.yml` passes `integration-package-path: IntegrationTests`.
+- [x] `.github/workflows/ci.yml` passes `integration-package-path: IntegrationTests`.
 - [ ] A CI run for the resulting commit shows BOTH jobs with conclusion `success`. Neither may be `skipped`.
 - [ ] The integration job's log shows the real-model test actually executing, with a pass count above zero — a green job that ran no test does not satisfy this.
 - [ ] The unit job still passes and its wall time stays in the same order as today's (about 30 seconds).
