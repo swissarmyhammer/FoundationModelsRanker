@@ -11,21 +11,6 @@
 import Foundation
 import FoundationModelsRanker
 
-// MARK: - The opt-in gate for the tests that need a live model
-
-/// The name of the environment variable that enables the gated tests.
-///
-/// Some tests need a live Apple Intelligence model. Those tests run only when
-/// this variable is set. This mirrors FoundationModelsMetadataRegistry's own
-/// `METADATA_REGISTRY_INTEGRATION_TESTS` convention. Nothing sets the variable
-/// by default, so a usual test run needs no model.
-public let foundationModelsRankerIntegrationEnvVar = "FOUNDATIONMODELSRANKER_INTEGRATION_TESTS"
-
-/// Whether the gated tests are enabled for this run.
-public var isFoundationModelsRankerIntegrationEnabled: Bool {
-    ProcessInfo.processInfo.environment[foundationModelsRankerIntegrationEnvVar] != nil
-}
-
 // MARK: - The demo paths
 
 /// One `demoQueries` entry's result: the query itself alongside its ranked or selected matches.

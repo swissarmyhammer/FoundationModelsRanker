@@ -138,11 +138,14 @@ Add the package to `Package.swift`:
   `swift run FullMonty --no-model` prints keyword-only retrieval results. `swift run FullMonty
   --embedder` adds the cosine signal from a demonstration embedder. The last two paths need no
   model, no GPU, and no network. See [`Examples/FullMonty`](Examples/FullMonty).
-- **The test `selectionTierWithABareLanguageModelSessionReachesGuidedGeneration` reports
-  "skipped" under a plain `swift test`.** The test needs a real `SystemLanguageModel` session,
-  and it needs nothing else. The test runs only when you set the environment variable
-  `FOUNDATIONMODELSRANKER_INTEGRATION_TESTS=1`. Set the variable and run the test on a Mac with
-  Apple Intelligence turned on.
+- **There are two test suites, and a package boundary separates them.** `swift test` runs the
+  unit suite. Every test in it drives a double, so it needs no model, no GPU, and no network.
+  `swift test --package-path IntegrationTests` runs the real-model suite in the nested
+  [`IntegrationTests`](IntegrationTests) package. Those tests drive a real `SystemLanguageModel`,
+  so run them on a Mac with Apple Intelligence turned on.
+- **The selection is structural, and no environment variable changes it.** The root
+  `Package.swift` declares one test target, and it is the unit suite, so a root `swift test`
+  cannot reach a model. The real-model target exists only in the nested package.
 
 ## License
 

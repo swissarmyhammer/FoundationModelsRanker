@@ -1,4 +1,3 @@
-import Foundation
 import FullMontyCore
 import FoundationModelsRanker
 import Testing
@@ -153,26 +152,5 @@ struct ExamplesSmokeTests {
         for result in results {
             #expect(result.matches.map(\.id) == ["stash"])
         }
-    }
-
-    // MARK: - The opt-in gate for the suites that need a live model
-
-    @Test("The opt-in environment variable keeps its name, which the gated suites read")
-    func theOptInEnvironmentVariableKeepsItsName() {
-        #expect(foundationModelsRankerIntegrationEnvVar == "FOUNDATIONMODELSRANKER_INTEGRATION_TESTS")
-    }
-
-    // An ordinary run leaves the opt-in variable unset, so the gate must read
-    // `false`. A gate that read `true` by default would start the live-model
-    // suites on every machine. `#require` states that condition, so a run with
-    // the variable set says why it failed instead of failing without a reason.
-    @Test("The gate is off when the opt-in environment variable is absent")
-    func theGateIsOffWhenTheOptInEnvironmentVariableIsAbsent() throws {
-        try #require(
-            ProcessInfo.processInfo.environment[foundationModelsRankerIntegrationEnvVar] == nil,
-            "This test states the default run. Clear \(foundationModelsRankerIntegrationEnvVar) and run the tests again."
-        )
-
-        #expect(isFoundationModelsRankerIntegrationEnabled == false)
     }
 }

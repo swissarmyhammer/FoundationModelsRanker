@@ -1,5 +1,4 @@
 import FoundationModels
-import FullMontyCore
 import Testing
 
 @testable import FoundationModelsRanker
@@ -11,6 +10,11 @@ import Testing
 /// method is only an extension method, Swift binds the call to the extension
 /// default and never reaches a conformer's override. The protocol must name
 /// the typed method as a requirement so the existential dispatches it.
+///
+/// Every session here is a double, so the suite reaches no model. The same
+/// claim against a live `SystemLanguageModel` is a real-model test, and it
+/// lives in the nested integration package
+/// (`IntegrationTests/Tests/FoundationModelsRankerIntegrationTests/SelectionTierRealModelTests.swift`).
 struct AgentSessionDispatchTests {
     // MARK: - Fixtures
 
@@ -26,12 +30,6 @@ struct AgentSessionDispatchTests {
         catalog.ids.map { id in
             SelectionMatch(id: id, block: catalog.block(forID: id) ?? "", score: 0.5, signals: nil)
         }
-    }
-
-    /// One live-model fixture entry whose summary names its own id, so a
-    /// session with no id-enum grammar can still answer with that id.
-    static func liveItem(id: String, description: String) -> FixtureSelectionCatalog.Item {
-        .init(id: id, block: description, summary: "id: \(id) -- \(description)")
     }
 
     // MARK: - Dispatch through the existential
@@ -79,43 +77,6 @@ struct AgentSessionDispatchTests {
         let selection = try await session.respond(to: "prompt", generating: Selection.self)
 
         #expect(selection.ids == [PlainTextOnlyAgentSession.selectedID])
-    }
-
-    // MARK: - Live on-device model, gated
-
-    /// A bare `LanguageModelSession` must reach its native guided generation
-    /// through `SelectionTier`. Without the protocol requirement the default
-    /// path asks the model for free text and fails to decode it as JSON.
-    ///
-    /// A bare session carries no id-enum grammar, so each summary names its
-    /// own id: the model can only return an id it has seen.
-    @Test(.enabled(if: isFoundationModelsRankerIntegrationEnabled))
-    func selectionTierWithABareLanguageModelSessionReachesGuidedGeneration() async throws {
-        let catalog = FixtureSelectionCatalog([
-            Self.liveItem(id: "readFile", description: "reads the contents of a file at a path"),
-            Self.liveItem(id: "writeFile", description: "writes text to a file at a path"),
-            Self.liveItem(id: "listDirectory", description: "lists the entries of a directory"),
-        ])
-        let config = SelectionConfig(model: { instructions in
-            LanguageModelSession(model: SystemLanguageModel.default, instructions: instructions)
-        })
-        let recorder = DiagnosticRecorder()
-        let tier = SelectionTier(
-            catalog: catalog,
-            config: config,
-            onDiagnostic: recorder.record,
-            retrievalRanking: { _ in
-                catalog.ids.map { id in
-                    SelectionMatch(id: id, block: catalog.block(forID: id) ?? "", score: 0.5, signals: nil)
-                }
-            }
-        )
-
-        let matches = try await tier.search(intent: "read the contents of a file", limit: 3)
-
-        #expect(recorder.diagnostics.isEmpty)
-        #expect(!matches.isEmpty)
-        #expect(matches.allSatisfy { catalog.ids.contains($0.id) })
     }
 }
 
