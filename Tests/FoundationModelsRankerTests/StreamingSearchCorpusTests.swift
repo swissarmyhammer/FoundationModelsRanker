@@ -55,6 +55,14 @@ struct StreamingSearchCorpusTests {
     /// stand in for the tests below.
     static let firstStreamedQueryEmbedCall = runAItems.count + 1
 
+    /// The 1-indexed `embed(_:)` call the second `search(_:limit:)` on such a
+    /// corpus spends on its query.
+    ///
+    /// A search embeds its query at most once, and a search whose query embed
+    /// fails makes no further call, so the second search always takes the
+    /// call directly after the first search's.
+    static let secondStreamedQueryEmbedCall = firstStreamedQueryEmbedCall + 1
+
     /// Builds a corpus the way a streaming producer fills one -- `runAItems`
     /// added one item for each `add(items:)` call, never as one batch -- so
     /// the item embeds take calls 1 through `runAItems.count` and
@@ -472,9 +480,13 @@ struct StreamingSearchCorpusTests {
     /// and reaches the query embed, which is then the first call that throws.
     /// The degradation is therefore attributable to the query embed alone.
     ///
-    /// The second search shows the corpus takes the decision again for each
-    /// search rather than latching after the first: it reports its own
-    /// diagnostic, and it still ranks.
+    /// The query embed of the second search fails as well, so that search
+    /// shows only that the corpus keeps ranking and reports one diagnostic
+    /// for each failed search. It cannot show that the corpus takes the
+    /// decision again rather than latching, because a latch would report the
+    /// same count. The proof of no latch is
+    /// `aLaterSearchOnTheSameCorpusRecoversTheCosineSignalTheFailedQueryEmbedDropped`,
+    /// whose second search succeeds.
     @Test
     func aFailedQueryEmbedDegradesTheStreamingSearchToKeywordOnlyAndReportsTheDiagnosticOncePerSearch() async {
         let recorder = DiagnosticRecorder()
@@ -510,40 +522,54 @@ struct StreamingSearchCorpusTests {
     /// That is the difference between a transient failure and a permanent
     /// one.
     ///
-    /// The recovering search runs on a second corpus, streamed exactly the
-    /// same way, because one `CountingEmbedder` throws from
-    /// `failingFromCall` onward and a corpus keeps the embedder it was built
-    /// with for its whole life. The same-corpus half of the claim -- that the
-    /// corpus keeps ranking and reports again for each later search -- is
-    /// asserted in
-    /// `aFailedQueryEmbedDegradesTheStreamingSearchToKeywordOnlyAndReportsTheDiagnosticOncePerSearch`.
+    /// Both searches run on ONE corpus, whose embedder fails for a window of
+    /// exactly one call -- the query embed of the first search -- and embeds
+    /// normally again from the query embed of the second search. Nothing else
+    /// changes between the two searches: same actor, same items, same stored
+    /// vectors, same query. The health of the embedder is therefore the only
+    /// possible cause of the difference.
+    ///
+    /// This is the assertion a latched degradation cannot pass. A corpus that
+    /// kept the failure -- a "cosine is broken, skip it" cache, for example --
+    /// would answer the second search with a zero cosine and one more
+    /// diagnostic, and each of the recovery assertions below would fail.
     @Test
-    func aLaterSearchWithAWorkingEmbedderRecoversTheCosineSignalTheFailedQueryEmbedDropped() async throws {
+    func aLaterSearchOnTheSameCorpusRecoversTheCosineSignalTheFailedQueryEmbedDropped() async throws {
         let query = "the parser failed to tokenize the config file"
-        let failingEmbedder = CountingEmbedder(dimension: 8, failingFromCall: Self.firstStreamedQueryEmbedCall)
-        let degradedCorpus = await Self.streamedRunACorpus(embedder: failingEmbedder)
+        let recorder = DiagnosticRecorder()
+        let embedder = CountingEmbedder(
+            dimension: 8,
+            failingFromCall: Self.firstStreamedQueryEmbedCall,
+            recoveringAtCall: Self.secondStreamedQueryEmbedCall
+        )
+        let actorCorpus = await Self.streamedRunACorpus(embedder: embedder, onDiagnostic: { recorder.record($0) })
 
-        let degradedMatches = await degradedCorpus.search(query, limit: 10)
+        let degradedMatches = await actorCorpus.search(query, limit: 10)
 
         #expect(!degradedMatches.isEmpty)
         #expect(degradedMatches.allSatisfy { $0.signals?.cosine == 0.0 })
+        #expect(recorder.diagnostics.filter { $0 == .embeddingUnavailable }.count == 1)
 
-        let workingEmbedder = FakeEmbedder(dimension: 8)
-        let recoveredCorpus = await Self.streamedRunACorpus(embedder: workingEmbedder)
-
-        let recoveredMatches = await recoveredCorpus.search(query, limit: 10)
+        let recoveredMatches = await actorCorpus.search(query, limit: 10)
 
         // Every recovered match carries the real cosine of its own stored
         // vector against the query's, and at least one of them is non-zero --
-        // the signal the degraded search above had to do without.
+        // the signal the degraded search above had to do without. A plain
+        // `FakeEmbedder` of the same dimension recomputes those vectors: it
+        // is the deterministic embedder `CountingEmbedder` wraps.
         #expect(!recoveredMatches.isEmpty)
-        let queryVector = try await workingEmbedder.embed([query])[0]
+        let plainEmbedder = FakeEmbedder(dimension: 8)
+        let queryVector = try await plainEmbedder.embed([query])[0]
         for match in recoveredMatches {
             let item = try #require(Self.runAItems.first { $0.id == match.id })
-            let itemVector = try await workingEmbedder.embed([item.text])[0]
+            let itemVector = try await plainEmbedder.embed([item.text])[0]
             #expect(match.signals?.cosine == CosineScoring.cosineSimilarity(queryVector, itemVector))
         }
         #expect(recoveredMatches.contains { ($0.signals?.cosine ?? 0.0) != 0.0 })
+
+        // The recovered search reported nothing of its own: the degradation
+        // ended with the search whose query embed threw.
+        #expect(recorder.diagnostics.filter { $0 == .embeddingUnavailable }.count == 1)
     }
 
     /// With an embedder configured, `add(items:)`/`search(_:limit:)` each
