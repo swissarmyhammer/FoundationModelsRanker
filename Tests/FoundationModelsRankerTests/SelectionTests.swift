@@ -159,9 +159,12 @@ struct SelectionTests {
     }
 
     @Test
-    func aFactorySessionIsPromptedWithTheIntentAlone() async throws {
-        // The factory path seeds the prefix as the session's instructions,
-        // so the prompt stays the intent alone, exactly as before.
+    func aFactorySessionIsPromptedWithTheIntentUnderTheTaskHeading() async throws {
+        // The factory path seeds the prefix as the session's instructions, so
+        // the prompt carries no prefix. It still carries the `# Task` heading
+        // a supplied session's prompt carries. The heading says the message is
+        // a task to select for, not a task to do, and a session that has
+        // answered nothing yet has nothing else to tell it from an order.
         let session = ScriptedAgentSession([#"{"ids":["deploy"]}"#])
         let config = SelectionConfig(model: { _ in session })
         let tier = SelectionTier(
@@ -173,7 +176,7 @@ struct SelectionTests {
 
         _ = try await tier.search(intent: "roll back the last deploy", limit: 5)
 
-        #expect(session.receivedPrompts == ["roll back the last deploy"])
+        #expect(session.receivedPrompts == ["# Task\n\nroll back the last deploy"])
     }
 
     // MARK: - Summary vs full block separation

@@ -165,7 +165,7 @@ struct OverBudgetTests {
     }
 
     @Test
-    func overBudgetFactorySessionIsPromptedWithTheIntentAlone() async throws {
+    func overBudgetFactorySessionIsPromptedWithTheIntentUnderTheTaskHeading() async throws {
         let session = ScriptedAgentSession([#"{"ids":["alpha"]}"#])
         let config = SelectionConfig(
             model: { _ in session },
@@ -181,7 +181,11 @@ struct OverBudgetTests {
 
         _ = try await tier.search(intent: "alpha", limit: 5)
 
-        #expect(session.receivedPrompts == ["alpha"])
+        // The over-budget factory prompt carries no prefix, because the
+        // candidate prefix is the one-off session's instructions. It carries
+        // the same `# Task` heading the under-budget factory prompt carries,
+        // because both paths prompt through one function.
+        #expect(session.receivedPrompts == ["# Task\n\nalpha"])
     }
 
     // MARK: - One-off session: no caching, no fork

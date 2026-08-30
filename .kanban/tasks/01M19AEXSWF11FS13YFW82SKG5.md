@@ -68,10 +68,71 @@ comments:
     - evidence: `swift build` clean, 0 warnings. `swift test` — 279 tests passed, 0 failed, 0 skipped. `swift build --package-path IntegrationTests --build-tests` clean, 0 warnings. `swift test --package-path IntegrationTests` run 5 times in a row — each run: 4 tests passed, 0 failed, 0 skipped (run 1: 4.692s, run 2: 3.773s, run 3: 3.744s, run 4: 3.911s, run 5: 3.707s). `swift run FullMonty --no-model` exit 0. `swift run FullMonty --embedder` exit 0. `Package.swift` has the `FullMontyCore` product. No library target has a dependency on `FullMontyCore`. `swift build --target FoundationModelsRanker` builds the library alone, exit 0.
     - next: none. All checks pass.
   timestamp: 2026-08-30T14:32:53.487328+00:00
+- actor: claude-code
+  id: 01m19hp1f0rk4f7zbmqce2477t
+  text: |-
+    ### review — clean
+
+    - evidence: `review sha HEAD~1..HEAD` (commit `03319bf`), 7 validators, 0 findings, 0 confirmed, 0 refuted, 0 failed. 5 files reviewed. Build before the review: `rm -rf .build/out && swift build --build-tests` — complete, 0 warnings.
+    - next: none. No new review findings. The card moves to `done`.
+
+    #### The four judgment items
+
+    **1. The new `FullMontyCore` library product. Recommendation: keep it.**
+
+    The root manifest now shows two products. A user of the package can import `FullMontyCore`. This is a change to the public surface.
+
+    Facts:
+
+    - SwiftPM gives no product that is only for tests. A target in one package reads code in another package only through a product. There is no third way.
+    - The symbols in `FullMontyCore` were already `public` before this change. A target is a module, so the root test target needed them public. The change adds reach, not new declarations.
+    - The library target keeps `dependencies: []`. No library target depends on `FullMontyCore`. The test step measured this: `swift build --target FoundationModelsRanker` builds the library alone, exit 0.
+    - The alternative is to remove the `runDefaultDemo` test. `runDefaultDemo` is the path with no flag. It is the path that uses the on-device model through `Searcher.defaultSessionFactory`. It is also the kind of path that commit `cbcee8c` broke without a signal. To remove the test keeps the surface at one product, but it keeps the front door of the demo untested.
+
+    The trade is correct. The cost is bounded and the manifest comment records it. The value is a test of the path that most needs one.
+
+    One recommendation, not a finding: the product now carries a promise of compatibility to a user who imports it. The manifest comment tells the reader that no library target depends on the example. It does not tell a user that the example has no compatibility promise. Add that sentence to the manifest comment or to the README.
+
+    **2. The query in the zero-config test. The record is honest and the test proves its claim.**
+
+    The doc comment of `query` in `ZeroConfigSearcherRealModelTests.swift` names the query that the card suggested, gives the measured behavior of that query, and gives the reason for the change: "record my staged changes as a new commit" gives the model no id on a cold session, and answers `commit` only after the same session answered an earlier query. The comment does not hide the change. Comment 1 on this card holds the full measurement, three runs of three. Card `^5pg59d2` records the behavior as work of its own.
+
+    The test still proves the claim. It asserts that the match list is not empty, that each match id is in the catalog, and it records an `Issue` if the run reports `.unknownSelectedId`. The claim is unchanged: the default path gives a real match with no `.unknownSelectedId`. Only the stimulus changed. The diagnostic handler runs on the task of the test, because no code in `Sources/` sends a diagnostic from a detached task, so the guard can fail the test.
+
+    **3. `Searcher.defaultSessionFactory` coverage. Confirmed.**
+
+    `ZeroConfigSearcherRealModelTests` calls `Searcher(toolCatalog, onDiagnostic: ...)`. The call gives two arguments, and neither is `session:`. Only the initializer with `session: ... = Searcher.defaultSessionFactory` can accept that call. The other public initializer needs a `session: any AgentSession` argument, so it cannot match. `FullMontyDefaultDemoRealModelTests` calls `runDefaultDemo()`, which uses the same default. The coverage moved because the default factory ran.
+
+    **4. The root library target. Confirmed.**
+
+    `Package.swift` keeps `.target(name: packageName, dependencies: [], path: "Sources/\(packageName)")`. The library target has no dependency on `FullMontyCore`. The dependency goes one way only: the `FullMontyCore` target depends on the library target.
+
+    #### Out of scope
+
+    `Demo.swift:125`, the body of the default-argument closure. The orchestrator withdrew this acceptance item. The review did not examine it.
+
+    #### Open marks in the description
+
+    Three `- [ ]` marks stay in the description. Each one holds its own recorded explanation. The review does not flip a mark. The orchestrator owns them.
+  timestamp: 2026-08-30T14:37:55.040806+00:00
+- actor: claude-code
+  id: 01m19hq7t592k8z6mrjc5s2v55
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: stuck → cleared by orchestrator card correction (the `Demo.swift:125` acceptance item misdescribed a closure body as a default-argument site; withdrawn as not applicable)
+    - test: green — root swift test 279 passed / 0 failed / 0 skipped; nested 4 passed, run FIVE times consecutively against the live model with no failure (4.7s, 3.8s, 3.7s, 3.9s, 3.7s); library still builds alone
+    - commit: 03319bf — 13 files changed, 392 insertions, 18 deletions
+    - review: clean — zero findings; the reviewer recommended keeping the `FullMontyCore` product and judged the query substitution an honest measurement rather than a quietly easier test
+    - next: none — task is in done
+
+    Searcher.swift reached 125/125 lines. `defaultSessionFactory` — the default of `session:`, what `try await Searcher(items)` in the README actually runs — had never executed in a test before this card.
+
+    Reviewer's one recommendation, not a finding, left for a future card: the new `FullMontyCore` product carries no stated compatibility promise. A sentence saying so belongs in the manifest comment or the README.
+  timestamp: 2026-08-30T14:38:34.309376+00:00
 depends_on:
 - 01M19ACG799X8YF41B4BA0C6FV
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: a480
 title: Cover the zero-config default on-device path end to end
 ---
 ## What

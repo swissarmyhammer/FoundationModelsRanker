@@ -44,10 +44,11 @@ import Foundation
 ///
 /// **Where the prefix goes** follows `SelectionConfig.sessionSource`. A
 /// `.factory` source seeds the prefix as each session's instructions, so the
-/// prompt is the intent alone. A `.session` source hands over one live
-/// session, which takes no new instructions: the tier forks that session for
-/// each call and carries the prefix in the prompt instead
-/// (`prompt(prefix:intent:)`). Either way the model sees the same prefix.
+/// prompt carries the intent alone, under a `# Task` heading. A `.session`
+/// source hands over one live session, which takes no new instructions: the
+/// tier forks that session for each call and carries the prefix above the
+/// same heading instead (`prompt(prefix:intent:)`). Either way the model sees
+/// the same prefix, and reads the intent as a task to select for.
 ///
 /// **IDs only** (plan.md §6, decision #4): the guided output is
 /// `Selection { ids: [String] }`. The assembled prefix shows every candidate
@@ -191,12 +192,26 @@ public actor SelectionTier {
     /// Both the cached-root path and the over-budget path prompt through
     /// this one function, so the two cannot drift apart.
     ///
-    /// A `.factory` source already seeded `prefix` as the session's
-    /// instructions, so the prompt is the intent alone -- unchanged from
-    /// before this seam existed. A `.session` source cannot take new
-    /// instructions, so the prompt carries the whole prefix above a
-    /// `# Task` heading; without it the model never sees the catalog and
-    /// can return no id at all.
+    /// Every prompt puts the intent under a `# Task` heading, whatever the
+    /// session source. The heading tells the model that the message names a
+    /// task to *select candidates for*, not a task to *do*. Many search
+    /// intents read as an order to the model itself -- "record my staged
+    /// changes as a new commit", "how do I list or delete a branch" -- and a
+    /// session that has answered nothing yet has nothing but the heading to
+    /// tell the two apart. Measured on the on-device system model over
+    /// `FullMonty`'s four demo queries, five cold runs each on a new
+    /// `Searcher`: without the heading the two order-shaped queries answered
+    /// 0 of 5 and 3 of 5; with it, every query answered 5 of 5. A session
+    /// that has already answered once needs no heading, because its own
+    /// transcript shows what an answer looks like, which is why the defect
+    /// showed only on the first question of a new `Searcher`.
+    ///
+    /// The heading is where the two sources stop being alike. A `.factory`
+    /// source already seeded `prefix` as the session's instructions, so its
+    /// prompt is the heading and the intent. A `.session` source cannot take
+    /// new instructions, so its prompt carries the whole prefix above the
+    /// heading; without the prefix the model never sees the catalog and can
+    /// return no id at all.
     ///
     /// - Parameters:
     ///   - prefix: this call's assembled candidate prefix -- the whole
@@ -204,11 +219,12 @@ public actor SelectionTier {
     ///   - intent: the plain-language search intent.
     /// - Returns: the prompt text to send.
     private func prompt(prefix: String, intent: String) -> String {
+        let task = "# Task\n\n\(intent)"
         switch config.sessionSource {
         case .factory:
-            return intent
+            return task
         case .session:
-            return "\(prefix)\n\n# Task\n\n\(intent)"
+            return "\(prefix)\n\n\(task)"
         }
     }
 

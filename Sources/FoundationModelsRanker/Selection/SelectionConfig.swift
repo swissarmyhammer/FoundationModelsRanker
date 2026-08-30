@@ -22,11 +22,12 @@
 /// throw the catalog away and the model would never see it.
 public enum SelectionSessionSource: Sendable {
     /// Makes a new session for each assembled prefix. The prefix becomes the
-    /// session's instructions, so the prompt is the intent alone.
+    /// session's instructions, so the prompt carries the intent alone, under
+    /// the `# Task` heading every prompt puts the intent under.
     case factory(@Sendable (String) -> any AgentSession)
 
     /// Reuses one supplied session. The tier forks the session for each
-    /// call, and the prefix rides above the intent on each prompt.
+    /// call, and the prefix rides above the `# Task` heading on each prompt.
     case session(any AgentSession)
 }
 
