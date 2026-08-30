@@ -423,6 +423,40 @@ struct SearcherTests {
         #expect(!recorder.diagnostics.contains(.embeddingUnavailable))
     }
 
+    // MARK: - Degradation: the query embed fails at search time
+
+    @Test
+    func aFailedQueryEmbedDegradesToKeywordOnlyRetrievalAndReportsTheDiagnosticOncePerSearch() async throws {
+        // The README promises this: an embedder is configured and every item
+        // carries an embedding, but the query embed throws at search time, so
+        // retrieval drops to keyword only and says so. `init` embeds every
+        // item in one call, and each retrieval search embeds the query in one
+        // more call, so call 2 is the query embed.
+        let queryEmbedCallNumber = 2
+        let recorder = DiagnosticRecorder()
+        let searcher = try await Searcher(
+            Self.toolItems,
+            embedder: CountingEmbedder(dimension: 8, failingFromCall: queryEmbedCallNumber),
+            session: nil,
+            mode: .retrieval,
+            onDiagnostic: { recorder.record($0) }
+        )
+
+        let matches = try await searcher.search("search file contents with a regular expression", limit: 5)
+
+        // Keyword retrieval still answers: the failed query embed degrades the
+        // search, and does not throw it away or empty it.
+        #expect(matches.first?.id == "grep")
+        #expect(matches.first?.score ?? 0.0 > 0.0)
+        #expect(matches.first?.signals?.bm25 ?? 0.0 > 0.0)
+        // A zero cosine tells the caller the signal did not contribute.
+        #expect(matches.first?.signals?.cosine == 0.0)
+        // One search reports the degradation one time.
+        #expect(recorder.diagnostics.filter { $0 == .embeddingUnavailable }.count == 1)
+    }
+
+    // MARK: - Degradation: a zeroed cosine weight is an opt-out, not a failure
+
     @Test
     func zeroCosineWeightOptsOutOfTheSignalWithoutReportingADiagnosticEvenWithNoEmbedder() async throws {
         let recorder = DiagnosticRecorder()
