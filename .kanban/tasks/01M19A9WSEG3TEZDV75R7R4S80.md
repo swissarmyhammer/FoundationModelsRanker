@@ -113,8 +113,82 @@ comments:
     - evidence: 2 files, tests only. /Users/wballard/github/swissarmyhammer/FoundationModelsRanker/Tests/FoundationModelsRankerTests/Support/CountingEmbedder.swift (`recoveringAtCall:` window plus a private `fails(callNumber:)`), /Users/wballard/github/swissarmyhammer/FoundationModelsRanker/Tests/FoundationModelsRankerTests/StreamingSearchCorpusTests.swift (`secondStreamedQueryEmbedCall` fixture, the same-corpus recovery test, one corrected doc comment). MUTATION: a `cosineIsBroken` latch put in `StreamingSearchCorpus.swift` made `aLaterSearchOnTheSameCorpusRecoversTheCosineSignalTheFailedQueryEmbedDropped` fail with 5 issues (3 cosine equalities, 1 non-zero cosine, 1 diagnostic count 1 against 2), while `aFailedQueryEmbedDegrades...OncePerSearch` passed. The latch was reverted; `git status` shows nothing under `Sources/`. `swift build` clean. `swift test`: 278 tests in 22 suites passed, 0 failures, 0 warnings. Coverage of StreamingSearchCorpus.swift 77/78 (98.72%), query-embed guard 3 hits on each line.
     - next: /review
   timestamp: 2026-08-30T13:50:29.179314+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m19f1v3nycxk5hgsxt6wy6j0
+  text: |-
+    ### commit — changed
+    - evidence: 96a8e98 fix(tests): make the recovery test able to fail (4 files changed, 178 insertions, 28 deletions)
+    - Sources/ has no changes in this commit.
+    - next: none
+  timestamp: 2026-08-30T13:51:56.021040+00:00
+- actor: claude-code
+  id: 01m19f80c6t3j3vggs9g0832bd
+  text: |-
+    Validator rule applied after the first pass: `swift/state-modeling`, bullet 1 -- "Model mutually-exclusive state as an `enum`, not several `Bool`s or optionals that can't all be valid at once. Multiple related flags, or several optionals where only one should ever be set, permit impossible states."
+
+    The first version of the window stored two optionals, `failingFromCall: Int?` and `recoveringAtCall: Int?`. That pair admits two states with no meaning: an end with no start, and an end before its own start. The rule names that shape, so the storage is now ONE `Range<Int>`:
+
+    - `private static let noFailingCalls = 0..<0` -- the window of an embedder that never throws.
+    - `private let failingCallNumbers: Range<Int>` -- the 1-indexed call numbers that throw. An empty range means the embedder always succeeds.
+    - The initializer keeps the two parameters the card named, `failingFromCall:` and `recoveringAtCall:`, both with a `nil` default, so no existing call site changes and no existing behavior changes. It builds the range with `failingFromCall..<max(failingFromCall, recovery)`, where `recovery` is `recoveringAtCall ?? Int.max`. The `max` also keeps the range total: a `recoveringAtCall` at or before `failingFromCall` gives an empty window, never a trap.
+    - `embed(_:)` now asks `failingCallNumbers.contains(callNumber)`, and the private `fails(callNumber:)` helper is deleted with the optionals it read.
+
+    The mutation evidence was taken again against this version, because the embedder changed. With the same `cosineIsBroken` latch in `StreamingSearchCorpus.swift`: `aLaterSearchOnTheSameCorpusRecoversTheCosineSignalTheFailedQueryEmbedDropped` FAILED with 5 issues (3 cosine equalities, 1 non-zero cosine, 1 diagnostic count), and `aFailedQueryEmbedDegrades...OncePerSearch` PASSED. Latch reverted; `git status` shows nothing under `Sources/`.
+
+    Other rules from the dump, checked against the diff with no change needed:
+    - `duplication` and `reuse` -- these support the approach. "Near-match not extended: an existing function is almost what is needed, and the right move was to generalize it (parameterize the difference) rather than write a parallel copy." A second embedder double would have been the finding.
+    - `completeness/public-output-contract` check 6 -- `recoveringAtCall` carries a default, so the initializer is not re-signed and every existing `CountingEmbedder(...)` site stands unchanged.
+    - `test-integrity/no-test-cheating`, "A weakened assertion" -- nothing was loosened. The per-match cosine equality is kept exactly, and two diagnostic-count assertions were added.
+    - `test-integrity/no-hard-code` -- the double computes its vectors through the wrapped `FakeEmbedder`; it returns no literal that would make an assertion pass.
+    - `code-hygiene/no-commented-code` -- the replaced test body is deleted, not commented out.
+    - `swift/access-control` and `missing-docs-swift` -- every declaration stays `internal`, so the doc-comment gate (`warning: [open, public]`) does not reach them. Each one carries a doc comment regardless.
+    - `swift/concurrency` -- the new stored property is a `let` on a checked `Sendable` class whose only mutable state stays behind `OSAllocatedUnfairLock`. No `@unchecked` and no new invariant to document.
+    - `swift/doc-parameter-naming` -- the `- Parameter` keys name the internal names, and no key is stale after the signature change.
+
+    Note for the record: commit `96a8e98` was created by the pipeline partway through this pass. It carries the first version, with the two optionals. The `Range<Int>` refactor above is uncommitted in the working tree. Both commits touch no file under `Sources/`.
+  timestamp: 2026-08-30T13:55:18.022251+00:00
+- actor: claude-code
+  id: 01m19f88500rfx2g7ks53a2m6h
+  text: |-
+    ### implement — changed
+    - evidence: 2 test files, no file under `Sources/`. /Users/wballard/github/swissarmyhammer/FoundationModelsRanker/Tests/FoundationModelsRankerTests/Support/CountingEmbedder.swift (bounded failure window held as one `Range<Int>`, per `swift/state-modeling`) and /Users/wballard/github/swissarmyhammer/FoundationModelsRanker/Tests/FoundationModelsRankerTests/StreamingSearchCorpusTests.swift (`secondStreamedQueryEmbedCall` fixture, the same-corpus recovery test, one corrected doc comment). MUTATION, re-run against the final embedder: a `cosineIsBroken` latch in `StreamingSearchCorpus.swift` made `aLaterSearchOnTheSameCorpusRecoversTheCosineSignalTheFailedQueryEmbedDropped` fail with 5 issues, while `aFailedQueryEmbedDegrades...OncePerSearch` passed; latch reverted. `swift build` clean. `swift test`: 278 tests in 22 suites passed, 0 failures, 0 warnings. Coverage of StreamingSearchCorpus.swift 77/78 (98.72%), query-embed guard 3 hits on each line. `git status`: nothing under `Sources/`.
+    - next: /review
+  timestamp: 2026-08-30T13:55:25.984344+00:00
+- actor: claude-code
+  id: 01m19fah58rfycba8tne8b04y3
+  text: |
+    ### review — clean
+    - evidence: zero new findings. `review sha HEAD~1..HEAD` (commit 96a8e98) gave 0 findings, 0 confirmed, 0 refuted, from 7 validators. The 2 `.kanban` files are outside the review scope. The prior finding of 2026-08-30 08:45 is genuinely corrected, and its checklist item is checked.
+    - Independent mutation, done again by this pass: a latch was put in `Sources/FoundationModelsRanker/StreamingSearchCorpus.swift` -- a stored `private var cosineIsBroken`, set to `true` in the query-embed guard and tested at the start of `cosineScores(forQuery:snapshot:)`. Under that latch, `aLaterSearchOnTheSameCorpusRecoversTheCosineSignalTheFailedQueryEmbedDropped` FAILED with 5 issues (3 at the per-match cosine equality on line 566, 1 at the non-zero cosine on line 568, 1 at the diagnostic count on line 572, which showed 2 in place of 1). The sibling test `aFailedQueryEmbedDegradesTheStreamingSearchToKeywordOnlyAndReportsTheDiagnosticOncePerSearch` PASSED under the same latch. The rewritten test can thus find a latched degradation, and the old two-corpus test could not. The latch was removed with `git checkout --`, and `git status` then showed no change under `Sources/`.
+    - `recoveringAtCall: nil` keeps the old behavior of `CountingEmbedder` exactly. `fails(callNumber:)` gives `true` only when `failingFromCall` is not `nil` and `callNumber >= failingFromCall`, which is the old condition word for word, because the second `guard` returns `true` when `recoveringAtCall` is `nil`. The call sites that give only `failingFromCall:` are therefore not changed: `Tests/FoundationModelsRankerTests/SearcherTests.swift:439` (card ^he0e2re), and `Tests/FoundationModelsRankerTests/StreamingSearchCorpusTests.swift:273`, `:343` and `:493`. The commit changes no line at any of those sites, and `SearcherTests.swift` is not in the commit.
+    - The corrected doc comment is accurate. It now says the second search of the sibling test "cannot show that the corpus takes the decision again rather than latching, because a latch would report the same count". The mutation run proves that statement: the sibling test passed with the latch in place.
+    - Test code only in the final state. Commit 96a8e98 changes `Tests/FoundationModelsRankerTests/StreamingSearchCorpusTests.swift`, `Tests/FoundationModelsRankerTests/Support/CountingEmbedder.swift` and 2 `.kanban` records. It changes 0 files under `Sources/`.
+    - `rm -rf .build/out && swift build --build-tests`: Build complete, 0 warnings. `swift test`: 278 tests in 22 suites passed, 0 failures, 0 warnings.
+    - TOOLING NOTE, not a finding on this card: during the `review sha` run, the engine wrote to `Tests/FoundationModelsRankerTests/Support/CountingEmbedder.swift` in the work tree. It replaced the two optional bounds with one stored `Range<Int>` and deleted `fails(callNumber:)`. That file was clean before the run. This pass put the committed content back with `git checkout --` and judged the commit, not the write of the engine. A copy of the written content is kept in the scratchpad of the session.
+    - next: none
+  timestamp: 2026-08-30T13:56:40.744528+00:00
+- actor: claude-code
+  id: 01m19fcgqp3dzpr3cvyzay4wry
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — CountingEmbedder gains a bounded failure window, recovery test rewritten to run one corpus that fails then recovers
+    - test: green — swift test 278 passed / 0 failed / 0 warnings
+    - commit: 96a8e98 — 4 files changed
+    - review: clean — the reviewer independently reproduced the mutation: with a latch installed, the rewritten recovery test fails with 5 issues while the sibling two-search test passes, which is exactly what the finding predicted
+    - next: none — task is in done
+
+    ### Orchestrator correction to the record
+
+    The review step reported that the review ENGINE wrote a `Range<Int>` refactor into `CountingEmbedder.swift` mid-run, and called it a tooling defect worth reporting upstream. That attribution is not safe to rely on, and I am not reporting it upstream.
+
+    What I can verify: the implement agent for this card resumed AFTER I had already committed `96a8e98`, and its own final report says it made exactly that `Range<Int>` refactor deliberately, citing the `swift/state-modeling` validator rule, and that it was "the remaining uncommitted change". So the most likely explanation is that the reviewer found the implementer's in-flight edit and mistook it for an engine write. An auto-fixing validator is a second possible explanation. I cannot separate the two after the fact, so I am recording both rather than filing a defect against the review tool.
+
+    Net effect on the code: the reviewer reverted that edit with `git checkout --`, so the committed and reviewed state is the two-optionals version. The working tree matches `96a8e98` exactly. The `Range<Int>` shape is lost. That is acceptable — it was an unrequested improvement, not a finding, and the review engine passed the committed version clean. Anyone who wants it can reapply it; the implementer's rationale (two optionals admit an end with no start, and an end before its start) is sound.
+
+    Process lesson for this batch: I committed on an agent's first "completed" notification while it was able to resume and keep working. A task notification is not proof that an agent is finished with the tree.
+  timestamp: 2026-08-30T13:57:45.846617+00:00
+position_column: done
+position_ordinal: a280
 title: Add tests for the query-embed failure path in StreamingSearchCorpus
 ---
 ## What
