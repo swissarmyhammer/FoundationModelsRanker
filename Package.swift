@@ -10,6 +10,15 @@ import PackageDescription
 /// sibling FoundationModelsMetadataRegistry package.
 let packageName = "FoundationModelsRanker"
 
+/// The example-logic target and its library product name.
+///
+/// `FullMonty`'s entry logic lives in this target, and two test targets drive
+/// it: the root test target, which reaches it as a sibling target, and the
+/// nested `IntegrationTests` package, which reaches it only through the
+/// product of the same name. The two spellings must agree, so the name is a
+/// constant, the same pattern `packageName` follows.
+let exampleCoreName = "FullMontyCore"
+
 /// The SwiftPM manifest for FoundationModelsRanker (plan.md §3).
 ///
 /// The manifest declares no external package dependency. Every target builds
@@ -35,7 +44,16 @@ let package = Package(
         .library(
             name: packageName,
             targets: [packageName]
-        )
+        ),
+        // The example is a demo, never part of the library, and this product
+        // does not make it one: no library target depends on it. The product
+        // exists because a target in another package reaches this code no
+        // other way, and the real-model half of the demo's default path is a
+        // test in the nested `IntegrationTests` package.
+        .library(
+            name: exampleCoreName,
+            targets: [exampleCoreName]
+        ),
     ],
     dependencies: [],
     targets: [
@@ -48,7 +66,7 @@ let package = Package(
             name: "\(packageName)Tests",
             dependencies: [
                 .target(name: packageName),
-                .target(name: "FullMontyCore"),
+                .target(name: exampleCoreName),
             ],
             path: "Tests/\(packageName)Tests"
         ),
@@ -59,9 +77,9 @@ let package = Package(
         // header. A plain library (not the executable itself) so
         // `ExamplesSmokeTests` can invoke its GPU-free paths directly.
         .target(
-            name: "FullMontyCore",
+            name: exampleCoreName,
             dependencies: [.target(name: packageName)],
-            path: "Examples/FullMontyCore"
+            path: "Examples/\(exampleCoreName)"
         ),
         // A thin runnable entry point over `FullMontyCore`. `swift build`
         // compiles this GPU-free; `swift run FullMonty --no-model` and
@@ -69,7 +87,7 @@ let package = Package(
         // path uses the on-device system model and needs Apple Intelligence.
         .executableTarget(
             name: "FullMonty",
-            dependencies: [.target(name: "FullMontyCore")],
+            dependencies: [.target(name: exampleCoreName)],
             path: "Examples/FullMonty"
         ),
     ]

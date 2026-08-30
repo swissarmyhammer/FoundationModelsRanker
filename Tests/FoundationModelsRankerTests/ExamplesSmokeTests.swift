@@ -153,4 +153,62 @@ struct ExamplesSmokeTests {
             #expect(result.matches.map(\.id) == ["stash"])
         }
     }
+
+    // MARK: - Diagnostic printing
+
+    /// The `considered` count of the sample `.retrievalCut`.
+    ///
+    /// A real cut considers more items than it keeps, so the sample pair
+    /// reads like a real one. Nothing depends on the numbers themselves:
+    /// `printDiagnostic` prints whatever it is given.
+    private static let sampleConsideredCount = 50
+
+    /// The `kept` count of the sample `.retrievalCut`.
+    private static let sampleKeptCount = 24
+
+    /// The id of the sample `.unknownSelectedId`, which names no catalog item.
+    private static let sampleUnknownID = "not-a-real-id"
+
+    /// One value of every `RankDiagnostic` case.
+    ///
+    /// `RankDiagnostic` carries associated values, so it cannot be
+    /// `CaseIterable` and this list is written by hand. `caseName(of:)`
+    /// switches over every case immediately below, which is what keeps the
+    /// list from falling behind a case added later.
+    private static let everyDiagnostic: [RankDiagnostic] = [
+        .retrievalCut(considered: sampleConsideredCount, kept: sampleKeptCount),
+        .unknownSelectedId(id: sampleUnknownID),
+        .embeddingUnavailable,
+    ]
+
+    /// Names the case of `diagnostic`.
+    ///
+    /// The `switch` is exhaustive, so a case added to `RankDiagnostic` later
+    /// stops the compiler here, beside `everyDiagnostic`, until both hold it.
+    ///
+    /// - Parameter diagnostic: the diagnostic to name.
+    /// - Returns: the name of its case.
+    private static func caseName(of diagnostic: RankDiagnostic) -> String {
+        switch diagnostic {
+        case .retrievalCut: "retrievalCut"
+        case .unknownSelectedId: "unknownSelectedId"
+        case .embeddingUnavailable: "embeddingUnavailable"
+        }
+    }
+
+    @Test("printDiagnostic prints every RankDiagnostic case without trapping")
+    func printDiagnosticPrintsEveryRankDiagnosticCase() {
+        for diagnostic in Self.everyDiagnostic {
+            printDiagnostic(diagnostic)
+        }
+
+        // The loop proves the printer takes each case without trapping. The
+        // claim below proves the loop read each case one time, so no case
+        // stands in for another. A case added to `RankDiagnostic` later
+        // cannot slip past unprinted either: the exhaustive `switch` in
+        // `caseName(of:)` stops the compiler until the new case is named
+        // there, beside the list the loop reads.
+        let names = Self.everyDiagnostic.map(Self.caseName(of:))
+        #expect(Set(names).count == names.count)
+    }
 }

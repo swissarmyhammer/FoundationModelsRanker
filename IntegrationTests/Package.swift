@@ -22,6 +22,13 @@ import PackageDescription
 /// a single source of truth, the same pattern the root manifest follows.
 let rootPackageName = "FoundationModelsRanker"
 
+/// The root package's example-logic library product.
+///
+/// `FullMonty`'s entry logic lives in this product, and one test here drives
+/// its default path, the path that needs the on-device system model. The root
+/// manifest holds the same name in its own `exampleCoreName` constant.
+let exampleCoreProductName = "FullMontyCore"
+
 /// The SwiftPM manifest for FoundationModelsRanker's real-model tests.
 ///
 /// The one test target holds the tests that drive a live
@@ -42,7 +49,8 @@ let package = Package(
         .testTarget(
             name: "\(rootPackageName)IntegrationTests",
             dependencies: [
-                .product(name: rootPackageName, package: rootPackageName)
+                .product(name: rootPackageName, package: rootPackageName),
+                .product(name: exampleCoreProductName, package: rootPackageName),
             ],
             path: "Tests/\(rootPackageName)IntegrationTests"
         )
