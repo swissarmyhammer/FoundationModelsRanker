@@ -199,8 +199,10 @@ Design rules for the facade:
   `LanguageModelSession`s rely on `Selection`'s `@Generable` typed output
   plus the `.unknownSelectedId` filter — same defended semantics either way.
 - Every knob stays reachable but optional: `embedder:`, `session:`,
-  `weights:`, `preamble:`, `candidateLimit:`, `mode:`
-  (`.retrieval`/`.selection`/`.auto`, default `.auto`).
+  `weights:`, `preamble:`, `mode:`
+  (`.retrieval`/`.selection`/`.auto`, default `.auto`). `candidateLimit:`
+  stood in this list until task `^kqp9e5e` removed the retrieval cut it
+  sized (the amendment under phase 3 in §6 records the change).
 - Graceful degradation is inherited, never silent: no embedder →
   keyword-only retrieval with a reported diagnostic; no session →
   retrieval-only, exactly FMR's absent-signal semantics.
@@ -303,6 +305,16 @@ per-id item/block lookup, and summary rendering — so the generalization is:
 - Everything selection-shaped keeps its semantics verbatim: under-budget
   cached-root + fork-per-call, over-budget retrieval top-M into a one-off
   session, ids-only grammar-constrained output, verbatim block lookup.
+
+  *Amended 2026-09-09 (task `^kqp9e5e`).* The selection tier no longer runs
+  retrieval. Under budget, one prompt picks and nothing ranks the catalog
+  after it; a pick carries an order score (`1 / rank`) and no signals. Over
+  budget, the tier splits the catalog into runs whose prefix each fits
+  `capacityCharacterLimit` and sends one prompt per run, so every id reaches
+  one prompt; no retrieval top-M cut picks the candidates. `candidateLimit`
+  is gone from `SelectionConfig` and from the `Searcher` knob list in §3a
+  above. `RankDiagnostic.retrievalCut` stays declared and is never emitted,
+  so a consumer's exhaustive `switch` still compiles.
 - **Selection prompt: default in FoundationModelsRanker, override per consumer.** The
   prompt is `SelectionConfig.preamble` (the full prefix is preamble +
   `# Candidates` + one entry for each candidate, assembled in

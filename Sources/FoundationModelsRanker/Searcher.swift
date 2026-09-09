@@ -36,9 +36,9 @@ import FoundationModels
 /// Every knob but `items` is optional: `embedder:` adds the cosine signal
 /// (every item's `text` is embedded once, here, at `init`); `session:`
 /// swaps the selection model -- defaults to the on-device system model, and
-/// is never hardcoded beyond that default; `weights:`, `preamble:`,
-/// `candidateLimit:` tune the retrieval and selection tiers directly;
-/// `mode:` picks which tier answers `search(_:limit:)`.
+/// is never hardcoded beyond that default; `weights:` and `preamble:` tune
+/// the retrieval and selection tiers directly; `mode:` picks which tier
+/// answers `search(_:limit:)`.
 ///
 /// `session:` has two front doors, one for each kind of caller. A caller
 /// that can make a session for each prefix gives a **factory closure**
@@ -103,8 +103,8 @@ public struct Searcher: Sendable {
     }
 
     /// This facade's precomputed retrieval state and the knobs
-    /// `search(_:limit:)`'s retrieval fallback and the selection tier's
-    /// per-search catalog ranking both drive `HybridRanker` through.
+    /// `search(_:limit:)`'s retrieval answer drives `HybridRanker` through.
+    /// The selection tier never reads it: a selection runs no retrieval.
     private let engine: RetrievalEngine
 
     /// Which tier `search(_:limit:)` uses.
@@ -141,9 +141,6 @@ public struct Searcher: Sendable {
     ///     to `1.0` for every signal.
     ///   - preamble: the selection guidance prepended to the assembled
     ///     prefix. Defaults to `.selectionDefault`.
-    ///   - candidateLimit: how many top-ranked candidates the over-budget
-    ///     selection path seeds a one-off session with. Defaults to
-    ///     `SelectionConfig.defaultCandidateLimit`.
     ///   - mode: which tier `search(_:limit:)` uses. Defaults to `.auto`.
     ///   - onDiagnostic: called for every diagnostic this facade or its
     ///     selection tier emits. Defaults to doing nothing.
@@ -155,7 +152,6 @@ public struct Searcher: Sendable {
         session: (@Sendable (String) -> any AgentSession)? = Searcher.defaultSessionFactory,
         weights: SignalWeights = SignalWeights(),
         preamble: String = .selectionDefault,
-        candidateLimit: Int = SelectionConfig.defaultCandidateLimit,
         mode: Mode = .auto,
         onDiagnostic: @escaping @Sendable (RankDiagnostic) -> Void = { _ in }
     ) async throws {
@@ -165,7 +161,6 @@ public struct Searcher: Sendable {
             sessionSource: session.map { SelectionSessionSource.factory($0) },
             weights: weights,
             preamble: preamble,
-            candidateLimit: candidateLimit,
             mode: mode,
             onDiagnostic: onDiagnostic
         )
@@ -208,9 +203,6 @@ public struct Searcher: Sendable {
     ///     to `1.0` for every signal.
     ///   - preamble: the selection guidance prepended to the assembled
     ///     prefix. Defaults to `.selectionDefault`.
-    ///   - candidateLimit: how many top-ranked candidates the over-budget
-    ///     selection path seeds a one-off session with. Defaults to
-    ///     `SelectionConfig.defaultCandidateLimit`.
     ///   - mode: which tier `search(_:limit:)` uses. Defaults to `.auto`.
     ///   - onDiagnostic: called for every diagnostic this facade or its
     ///     selection tier emits. Defaults to doing nothing.
@@ -222,7 +214,6 @@ public struct Searcher: Sendable {
         session: any AgentSession,
         weights: SignalWeights = SignalWeights(),
         preamble: String = .selectionDefault,
-        candidateLimit: Int = SelectionConfig.defaultCandidateLimit,
         mode: Mode = .auto,
         onDiagnostic: @escaping @Sendable (RankDiagnostic) -> Void = { _ in }
     ) async throws {
@@ -232,7 +223,6 @@ public struct Searcher: Sendable {
             sessionSource: .session(session),
             weights: weights,
             preamble: preamble,
-            candidateLimit: candidateLimit,
             mode: mode,
             onDiagnostic: onDiagnostic
         )
@@ -252,8 +242,6 @@ public struct Searcher: Sendable {
     ///   - weights: the per-signal fusion weights for retrieval.
     ///   - preamble: the selection guidance prepended to the assembled
     ///     prefix.
-    ///   - candidateLimit: how many top-ranked candidates the over-budget
-    ///     selection path seeds a one-off session with.
     ///   - mode: which tier `search(_:limit:)` uses.
     ///   - onDiagnostic: called for every diagnostic this facade or its
     ///     selection tier emits.
@@ -265,7 +253,6 @@ public struct Searcher: Sendable {
         sessionSource: SelectionSessionSource?,
         weights: SignalWeights,
         preamble: String,
-        candidateLimit: Int,
         mode: Mode,
         onDiagnostic: @escaping @Sendable (RankDiagnostic) -> Void
     ) async throws {
@@ -290,13 +277,8 @@ public struct Searcher: Sendable {
         if let sessionSource {
             self.selectionTier = SelectionTier(
                 catalog: corpus,
-                config: Self.selectionConfig(
-                    sessionSource: sessionSource,
-                    preamble: preamble,
-                    candidateLimit: candidateLimit
-                ),
-                onDiagnostic: onDiagnostic,
-                retrievalRanking: engine.fullOrdering
+                config: Self.selectionConfig(sessionSource: sessionSource, preamble: preamble),
+                onDiagnostic: onDiagnostic
             )
         } else {
             self.selectionTier = nil
@@ -312,31 +294,22 @@ public struct Searcher: Sendable {
     ///   - sessionSource: where the selection tier gets its sessions.
     ///   - preamble: the selection guidance prepended to the assembled
     ///     prefix.
-    ///   - candidateLimit: how many top-ranked candidates the over-budget
-    ///     selection path seeds a one-off session with.
     /// - Returns: the configuration that carries `sessionSource`.
-    private static func selectionConfig(
-        sessionSource: SelectionSessionSource,
-        preamble: String,
-        candidateLimit: Int
-    ) -> SelectionConfig {
+    private static func selectionConfig(sessionSource: SelectionSessionSource, preamble: String) -> SelectionConfig {
         switch sessionSource {
         case .factory(let makeSession):
-            return SelectionConfig(model: makeSession, preamble: preamble, candidateLimit: candidateLimit)
+            return SelectionConfig(model: makeSession, preamble: preamble)
         case .session(let session):
-            return SelectionConfig(session: session, preamble: preamble, candidateLimit: candidateLimit)
+            return SelectionConfig(session: session, preamble: preamble)
         }
     }
 
     /// Searches this facade's catalog for `query`, answering through
     /// whichever tier `mode` selects.
     ///
-    /// A selection-tier search (under or over budget) ranks the whole
-    /// catalog once per query to attach real scores to the picks — which
-    /// includes one query-embedding call when an `embedder:` is configured.
-    /// Without one, each selection search reports the same
-    /// `.embeddingUnavailable` degradation a retrieval search does (unless
-    /// `weights.cosine` is `0.0`, the documented opt-out).
+    /// A selection-tier search asks the model and ranks nothing: it embeds
+    /// no query, reads no retrieval signal, and reports no
+    /// `.embeddingUnavailable`. Only a retrieval search runs `HybridRanker`.
     ///
     /// - Parameters:
     ///   - query: the search query.
@@ -345,9 +318,9 @@ public struct Searcher: Sendable {
     ///     or crashing.
     /// - Returns: `.retrieval`'s fused, `[0, 1]`-normalized matches, each
     ///   carrying real per-signal `signals`; `.selection`'s verbatim
-    ///   matches, each carrying the same real fused score/signals the
-    ///   full-catalog retrieval ordering reports for the query (plan.md
-    ///   §3a); `.auto`'s resolution of whichever of those applies.
+    ///   matches in the model's order, each scored by its position
+    ///   (`1 / rank`) with no `signals`; `.auto`'s resolution of whichever
+    ///   of those applies.
     /// - Throws: `SelectionTierUnavailable` when `mode == .selection` and no
     ///   session is configured (`session: nil`); otherwise whatever the
     ///   underlying selection session throws.
@@ -380,11 +353,8 @@ public struct SelectionTierUnavailable: Error, Sendable, Equatable {
 }
 
 /// Bundles `Searcher`'s precomputed retrieval state (the corpus and its item
-/// embeddings) and knobs (`embedder`, `weights`, `onDiagnostic`) so both
-/// `search(_:limit:)`'s own retrieval fallback and the selection tier's
-/// `retrievalRanking` closure (captured at `init`, before `self` exists as a
-/// `Searcher`) drive the same `HybridRanker` calls without duplicating the
-/// wiring.
+/// embeddings) and knobs (`embedder`, `weights`, `onDiagnostic`) behind the
+/// one `HybridRanker` call `search(_:limit:)`'s retrieval answer makes.
 private struct RetrievalEngine: Sendable {
     /// The corpus this engine ranks: its `ids`/`documents` are
     /// `HybridRanker`'s arguments, and its `block(forID:)` resolves every hit
@@ -443,58 +413,24 @@ private struct RetrievalEngine: Sendable {
         return itemEmbeddings.map { CosineScoring.cosineSimilarity(queryVector, $0) }
     }
 
-    /// `.retrieval` mode's answer: `HybridRanker.topMatches(...)`, mapped
-    /// back through `corpus` to verbatim `SelectionMatch`es.
+    /// `.retrieval` mode's answer: short-circuits an empty corpus, resolves
+    /// the cosine signal once, ranks with `HybridRanker.topMatches(...)`, and
+    /// maps the hits back through `corpus` to verbatim `SelectionMatch`es.
     ///
     /// - Parameters:
     ///   - query: the search query.
     ///   - limit: the maximum number of matches to return.
     /// - Returns: the fused, `[0, 1]`-normalized matches, best-first.
     func topMatches(query: String, limit: Int) async -> [SelectionMatch] {
-        guard limit > 0 else { return [] }
-        return await rankedMatches(forQuery: query) { scores in
-            HybridRanker.topMatches(
-                ids: corpus.ids,
-                documents: corpus.documents,
-                query: query,
-                cosineScores: scores,
-                weights: weights,
-                limit: limit
-            )
-        }
-    }
-
-    /// The selection tier's `retrievalRanking` source
-    /// (`SelectionTier.init(catalog:config:onDiagnostic:retrievalRanking:)`):
-    /// `HybridRanker.fullOrdering(...)`, mapped back through `corpus` to
-    /// verbatim `SelectionMatch`es -- always exactly `corpus.count` long.
-    /// Over budget it supplies the top-M candidate cut; under budget it
-    /// supplies the real fused `score`/`signals` every selected id carries.
-    ///
-    /// - Parameter query: the search intent.
-    /// - Returns: exactly `corpus.count` matches, best-first.
-    func fullOrdering(query: String) async -> [SelectionMatch] {
-        await rankedMatches(forQuery: query) { scores in
-            HybridRanker.fullOrdering(
-                ids: corpus.ids, documents: corpus.documents, query: query, cosineScores: scores, weights: weights
-            )
-        }
-    }
-
-    /// The shared ranking pipeline of `topMatches` and `fullOrdering`, which
-    /// differ only in the `HybridRanker` call `rank` binds: short-circuit an
-    /// empty corpus, resolve the cosine signal once, rank, and map the hits
-    /// back through `corpus` to verbatim `SelectionMatch`es.
-    ///
-    /// - Parameters:
-    ///   - query: the search query to resolve cosine scores for.
-    ///   - rank: ranks the corpus given the resolved cosine scores (`nil`
-    ///     when the signal is skipped), in whatever order it decides.
-    /// - Returns: one `SelectionMatch` per hit, positionally aligned with
-    ///   `rank`'s result.
-    private func rankedMatches(forQuery query: String, rank: ([Double]?) -> [Hit]) async -> [SelectionMatch] {
-        guard !corpus.isEmpty else { return [] }
-        let hits = rank(await cosineScores(forQuery: query))
+        guard limit > 0, !corpus.isEmpty else { return [] }
+        let hits = HybridRanker.topMatches(
+            ids: corpus.ids,
+            documents: corpus.documents,
+            query: query,
+            cosineScores: await cosineScores(forQuery: query),
+            weights: weights,
+            limit: limit
+        )
         return hits.map { hit in
             SelectionMatch(id: hit.id, block: corpus.block(forID: hit.id) ?? "", score: hit.score, signals: hit.signals)
         }

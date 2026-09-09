@@ -34,10 +34,9 @@ struct SearcherTests {
     /// §3a's knob list omits it), so the over-budget path is forced here by
     /// bulk `summary` content instead of a tiny forced limit
     /// (`OverBudgetTests`'s approach against `SelectionTier` directly).
-    /// `text` (which `HybridRanker` actually scores) stays short and
-    /// query-relevant only for "alpha"; `summary` (which only pads the
-    /// assembled prefix) is deliberately long filler for every entry so the
-    /// budget is blown regardless of which items match.
+    /// `summary` (which pads the assembled prefix) is deliberately long
+    /// filler for every entry so the budget is blown, and the catalog is
+    /// split into several prompts.
     static let bulkItems: [SearchItem] = {
         let filler = String(repeating: "padding text that inflates the assembled selection prefix past budget. ", count: 12)
         return (0..<40).map { index in
@@ -46,6 +45,9 @@ struct SearcherTests {
             return SearchItem(id: id, text: text, summary: "SUMMARY_\(id) \(filler)")
         }
     }()
+
+    /// The vector length every counting embedder in this suite produces.
+    private static let embeddingDimension = 8
 
     // MARK: - `.retrieval` mode: no session touched, real signals attached
 
@@ -76,7 +78,7 @@ struct SearcherTests {
     // MARK: - `.selection` mode, under budget: cached root + fork-per-call
 
     @Test
-    func selectionModeUnderBudgetUsesTheConfiguredSessionAndAttachesRealRetrievalScoreAndSignals() async throws {
+    func selectionModeUnderBudgetUsesTheConfiguredSessionAndScoresThePickByItsOrder() async throws {
         let root = RootSessionRespondCalledDirectlySession(forkResponses: [#"{"ids":["glob"]}"#])
         let factoryCallCount = CallCounter()
         let searcher = try await Searcher(
@@ -92,37 +94,37 @@ struct SearcherTests {
 
         #expect(matches.map(\.id) == ["glob"])
         #expect(matches.first?.block == "Find files by name pattern, sorted by mtime")
-        // Under budget the whole catalog is ranked once per query, so the
-        // pick carries the same real fused score and per-signal breakdown
-        // `.retrieval` mode reports for it -- never a fixed sentinel.
-        let retrievalSearcher = try await Searcher(Self.toolItems, session: nil, mode: .retrieval)
-        let retrievalMatches = try await retrievalSearcher.search("find files by name", limit: 5)
-        let expected = try #require(retrievalMatches.first { $0.id == "glob" })
-        #expect(matches.first?.score == expected.score)
-        #expect(matches.first?.signals == expected.signals)
+        // The one prompt picks, and nothing ranks the catalog after it: the
+        // pick carries its order score and no retrieval signals.
+        #expect(matches.first?.score == OrderScores.firstPick)
+        #expect(matches.first?.signals == nil)
         // Cached-root + fork-per-call: the session factory ran exactly once.
         #expect(factoryCallCount.count == 1)
         #expect(root.forkCount == 1)
     }
 
     @Test
-    func selectionModeUnderBudgetAttachesTheZeroScoredTailEntrysRealScoreAndSignals() async throws {
-        // "qqqq" shares no token and no trigram with any item, so the full
-        // retrieval ordering puts every id in the zero-scored tail -- yet the
-        // whole catalog stays selectable under budget. The scripted pick
-        // must carry that tail entry's real (zero) score and all-zero
-        // signals, not the old 1.0/nil pure-selection sentinel.
+    func selectionModeMakesOneModelCallAndNeverEmbedsTheQuery() async throws {
+        // `init` embeds every item in one call. A selection search asks the
+        // model once and embeds nothing, so the count stays at that one call.
+        let embedder = CountingEmbedder(dimension: Self.embeddingDimension)
+        let session = ScriptedAgentSession([#"{"ids":["watch"]}"#])
+        let recorder = DiagnosticRecorder()
         let searcher = try await Searcher(
             Self.toolItems,
-            session: { _ in ScriptedAgentSession([#"{"ids":["watch"]}"#]) },
-            mode: .selection
+            embedder: embedder,
+            session: { _ in session },
+            mode: .selection,
+            onDiagnostic: { recorder.record($0) }
         )
+        let embedCallsAfterInit = embedder.callCount
 
-        let matches = try await searcher.search("qqqq", limit: 5)
+        let matches = try await searcher.search("qqqq")
 
         #expect(matches.map(\.id) == ["watch"])
-        #expect(matches.first?.score == 0.0)
-        #expect(matches.first?.signals == Signals(bm25: 0.0, trigram: 0.0, cosine: 0.0))
+        #expect(session.callCount == 1)
+        #expect(embedder.callCount == embedCallsAfterInit)
+        #expect(recorder.diagnostics.isEmpty)
     }
 
     @Test
@@ -149,66 +151,47 @@ struct SearcherTests {
         #expect(matchesB.map(\.id) == ["watch"])
     }
 
-    // MARK: - `.selection` mode, over budget: retrieval top-M + one-off session
+    // MARK: - `.selection` mode, over budget: one prompt per run of items
 
     @Test
-    func selectionModeOverBudgetSeedsAOneOffSessionFromRetrievalTopCandidates() async throws {
-        let factoryCallCount = CallCounter()
-        let searcher = try await Searcher(
-            Self.bulkItems,
-            session: { _ in
-                factoryCallCount.increment()
-                return ScriptedAgentSession([#"{"ids":["alpha"]}"#])
-            },
-            mode: .selection
-        )
+    func selectionModeOverBudgetSendsEveryItemIdToExactlyOnePrompt() async throws {
+        let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha"]}"#])
+        let searcher = try await Searcher(Self.bulkItems, session: factory.makeSession, mode: .selection)
 
-        let matches = try await searcher.search("urgent alpha task", limit: 5)
+        let matches = try await searcher.search("urgent alpha task")
 
         #expect(matches.map(\.id) == ["alpha"])
-        // Retrieval genuinely ran to rank "alpha" first -- the over-budget
-        // path's results carry the real fused score/signals of this round's
-        // top candidates.
-        #expect((matches.first?.score ?? 0.0) > 0.0)
-        #expect(matches.first?.signals != nil)
-        // One-off session per call: calling search() twice re-invokes the
-        // factory, unlike the cached-root under-budget path.
-        _ = try await searcher.search("urgent alpha task", limit: 5)
-        #expect(factoryCallCount.count == 2)
+        #expect(matches.first?.score == OrderScores.firstPick)
+        #expect(matches.first?.signals == nil)
+        // The catalog does not fit one prompt, so it is split into several,
+        // and every item reaches exactly one of them. The heading line is
+        // matched whole, because `## filler3` is a prefix of `## filler30`.
+        #expect(factory.receivedInstructions.count > 1)
+        for item in Self.bulkItems {
+            let promptsCarryingID = factory.receivedInstructions.filter { $0.contains("## \(item.id)\n") }
+            #expect(promptsCarryingID.count == 1, "\(item.id) must reach exactly one prompt")
+        }
     }
 
     @Test
-    func selectionModeOverBudgetReportsARetrievalCutDiagnostic() async throws {
-        final class DiagnosticBox: @unchecked Sendable {
-            private let lock = NSLock()
-            private var recorded: [RankDiagnostic] = []
-            func record(_ diagnostic: RankDiagnostic) {
-                lock.lock()
-                defer { lock.unlock() }
-                recorded.append(diagnostic)
-            }
-            var diagnostics: [RankDiagnostic] {
-                lock.lock()
-                defer { lock.unlock() }
-                return recorded
-            }
-        }
-        let box = DiagnosticBox()
+    func selectionModeOverBudgetNeverEmbedsTheQueryAndReportsNoDiagnostic() async throws {
+        let embedder = CountingEmbedder(dimension: Self.embeddingDimension)
+        let recorder = DiagnosticRecorder()
         let searcher = try await Searcher(
             Self.bulkItems,
+            embedder: embedder,
             session: { _ in ScriptedAgentSession([#"{"ids":["alpha"]}"#]) },
             mode: .selection,
-            onDiagnostic: { box.record($0) }
+            onDiagnostic: { recorder.record($0) }
         )
+        let embedCallsAfterInit = embedder.callCount
 
-        _ = try await searcher.search("urgent alpha task", limit: 5)
+        _ = try await searcher.search("urgent alpha task")
 
-        #expect(
-            box.diagnostics.contains {
-                if case .retrievalCut = $0 { return true }
-                return false
-            }
-        )
+        // No retrieval cut picks the candidates, so no query is embedded and
+        // nothing is reported.
+        #expect(embedder.callCount == embedCallsAfterInit)
+        #expect(recorder.diagnostics.isEmpty)
     }
 
     // MARK: - `.auto` mode resolution, both ways
@@ -228,14 +211,29 @@ struct SearcherTests {
         let matches = try await searcher.search("search file contents with a regular expression", limit: 5)
 
         #expect(matches.map(\.id) == ["watch"])
-        // The under-budget pick carries the same real fused score and
-        // per-signal breakdown `.retrieval` mode reports for "watch" on this
-        // query -- never a fixed sentinel.
-        let retrievalSearcher = try await Searcher(Self.toolItems, session: nil, mode: .retrieval)
-        let retrievalMatches = try await retrievalSearcher.search("search file contents with a regular expression", limit: 5)
-        let expected = try #require(retrievalMatches.first { $0.id == "watch" })
-        #expect(matches.first?.score == expected.score)
-        #expect(matches.first?.signals == expected.signals)
+        // The pick carries its order score and no retrieval signals: `.auto`
+        // with a session runs no retrieval at all.
+        #expect(matches.first?.score == OrderScores.firstPick)
+        #expect(matches.first?.signals == nil)
+    }
+
+    @Test
+    func autoModeWithASessionNeverEmbedsTheQueryOrReportsEmbeddingUnavailable() async throws {
+        let embedder = CountingEmbedder(dimension: Self.embeddingDimension)
+        let recorder = DiagnosticRecorder()
+        let searcher = try await Searcher(
+            Self.toolItems,
+            embedder: embedder,
+            session: { _ in ScriptedAgentSession([#"{"ids":["watch"]}"#]) },
+            mode: .auto,
+            onDiagnostic: { recorder.record($0) }
+        )
+        let embedCallsAfterInit = embedder.callCount
+
+        _ = try await searcher.search("search file contents with a regular expression")
+
+        #expect(embedder.callCount == embedCallsAfterInit)
+        #expect(recorder.diagnostics.isEmpty)
     }
 
     @Test
@@ -256,7 +254,7 @@ struct SearcherTests {
     // MARK: - The `session:` front doors: one live session, or a factory
 
     @Test
-    func aSuppliedSessionAnswersSelectionAndCarriesTheRealFusedScoreAndSignals() async throws {
+    func aSuppliedSessionAnswersSelectionAndScoresThePickByItsOrder() async throws {
         // The instance front door: a caller that already holds a session
         // gives it directly, with no factory closure around it.
         let session = ScriptedAgentSession([#"{"ids":["glob"]}"#])
@@ -269,13 +267,9 @@ struct SearcherTests {
         // The supplied session answered: a `.session` source forks the very
         // session the caller gave, and makes no session of its own.
         #expect(session.forkCount == 1)
-        // The pick carries the same real fused score and per-signal
-        // breakdown `.retrieval` mode reports for it -- never a sentinel.
-        let retrievalSearcher = try await Searcher(Self.toolItems, session: nil, mode: .retrieval)
-        let retrievalMatches = try await retrievalSearcher.search("find files by name", limit: 5)
-        let expected = try #require(retrievalMatches.first { $0.id == "glob" })
-        #expect(matches.first?.score == expected.score)
-        #expect(matches.first?.signals == expected.signals)
+        // The pick carries its order score and no retrieval signals.
+        #expect(matches.first?.score == OrderScores.firstPick)
+        #expect(matches.first?.signals == nil)
     }
 
     @Test
@@ -388,11 +382,9 @@ struct SearcherTests {
     }
 
     @Test
-    func selectionModeUnderBudgetWithNoEmbedderReportsEmbeddingUnavailable() async throws {
-        // The per-search ranking that attaches real score/signals to
-        // under-budget picks wants the cosine signal (default weights) but
-        // has no embedder -- every selection search now reports the same
-        // `.embeddingUnavailable` degradation a retrieval search does.
+    func selectionModeWithNoEmbedderReportsNoEmbeddingUnavailable() async throws {
+        // A selection search runs no retrieval, so it wants no cosine signal
+        // and has no degradation to report when no embedder is set.
         let recorder = DiagnosticRecorder()
         let searcher = try await Searcher(
             Self.toolItems,
@@ -404,7 +396,7 @@ struct SearcherTests {
 
         _ = try await searcher.search("find files by name", limit: 5)
 
-        #expect(recorder.diagnostics.contains(.embeddingUnavailable))
+        #expect(recorder.diagnostics.isEmpty)
     }
 
     @Test

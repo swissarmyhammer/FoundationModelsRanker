@@ -18,8 +18,8 @@
 /// lookups; nothing here requires adopting a particular storage shape.
 public protocol SelectionCatalog: Sendable {
     /// The catalog's ids, in the order candidates should be considered --
-    /// the full candidate set under budget, or the set a selection tier
-    /// ranks from over budget.
+    /// the full candidate set under budget, or the order a selection tier
+    /// splits them into prompts over budget.
     var ids: [String] { get }
 
     /// A (typically shorter) summary of `id`'s item, used to seed the

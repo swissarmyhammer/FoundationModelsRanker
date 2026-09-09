@@ -4,7 +4,14 @@
 // `MetadataIndex<Item>`: `index.ids`/`item(forID:)`/`block(forID:)`/
 // `renderSummaryBlock()` map onto `catalog.ids`/`summaryBlock(forID:)`/
 // `block(forID:)`; `Match<Item>` becomes `SelectionMatch` (no catalog item to
-// carry); `MetadataDiagnostic` becomes `RankDiagnostic`. Semantics unchanged.
+// carry); `MetadataDiagnostic` becomes `RankDiagnostic`.
+//
+// Task ^kqp9e5e removed every retrieval step from this tier. The source tier
+// ranked the whole catalog with BM25, trigram, and cosine after the model
+// answered (to score the picks) and before the prompt over budget (to cut the
+// candidates to the top M). This tier makes one prompt that picks, and
+// nothing else: a pick is scored by its position in the answer, and an
+// over-budget catalog is split into several prompts rather than cut.
 
 import Foundation
 
@@ -17,36 +24,33 @@ import Foundation
 /// Assembles a prefix from `SelectionConfig.preamble`, a `# Candidates`
 /// header, and every catalog id rendered as a markdown heading above that
 /// id's **`summaryBlock(forID:)`** (plan.md §4: the summary seeds the
-/// selection prefix; retrieval indexes the full `block(forID:)` instead)
-/// once at `init`, since the catalog never changes for this tier's lifetime
-/// — a reload replaces the whole tier rather than mutating one in place.
+/// selection prefix; the full `block(forID:)` is the result payload) once
+/// at `init`, since the catalog never changes for this tier's lifetime — a
+/// reload replaces the whole tier rather than mutating one in place.
+///
+/// **One prompt picks.** A search sends the intent to the model and returns
+/// the ids the model answered, in the model's order. No retrieval signal
+/// enters a selection: the tier needs no embedder and no BM25 index, and a
+/// `SelectionMatch` it returns carries an order score (`1 / rank`) and no
+/// `signals`.
 ///
 /// **Under budget** (assembled prefix ≤ `capacityCharacterLimit`): a cached
 /// root session is seeded once with the prefix, and each
 /// `search(intent:limit:)` `fork()`s a fresh child from it, so the prefix's
 /// KV cache is prefilled once and inherited per call — lifted from
 /// `Librarian.findAPIs(task:)`'s cached-root + fork-per-call mechanics.
-/// `retrievalRanking` then ranks the whole catalog once per call so every
-/// selected id carries its real fused `score`/`signals` (plan.md §3a); the
-/// whole catalog stays selectable, so no `.retrievalCut` is reported.
 ///
-/// **Over budget**: `retrievalRanking` ranks the whole catalog for the
-/// intent, and the top `config.candidateLimit` candidates (best-first) go to
-/// a **fresh, uncached one-off session** — there is no stable
-/// prefix to reuse, since the candidate set differs per intent. The cut is
-/// reported via `RankDiagnostic.retrievalCut(considered:kept:)` (the
-/// `onPrefilterCut` pattern, generalized to ranked retrieval). Returned
-/// `SelectionMatch`es carry the same real fused `score`/`signals` as the
-/// under-budget path's, and a selected id outside this round's candidates —
-/// even a legitimate id from elsewhere in the wider catalog — is filtered
-/// and reported via `.unknownSelectedId`, exactly like an id absent from
-/// the catalog altogether.
+/// **Over budget**: the catalog ids are split, in catalog order, into runs
+/// whose assembled prefix each fits the budget, and every run gets one
+/// prompt on a **fresh, uncached one-off session**. Every id reaches exactly
+/// one prompt. The answers are merged in run order, then in the model's
+/// order inside each run. `search(intent:limit:)` documents the design.
 ///
 /// **Where the prefix goes** follows `SelectionConfig.sessionSource`. A
 /// `.factory` source seeds the prefix as each session's instructions, so the
 /// prompt carries the intent alone, under a `# Task` heading. A `.session`
 /// source hands over one live session, which takes no new instructions: the
-/// tier forks that session for each call and carries the prefix above the
+/// tier forks that session for each prompt and carries the prefix above the
 /// same heading instead (`prompt(prefix:intent:)`). Either way the model sees
 /// the same prefix, and reads the intent as a task to select for.
 ///
@@ -55,94 +59,126 @@ import Foundation
 /// id as a markdown heading, so the model can read the ids it may return.
 /// This tier applies no grammar of its own: a caller that wants guided
 /// generation applies one when it makes the session, and
-/// `idEnumSchema(ids:)` gives that caller the id set — the whole catalog
-/// under budget, the top-M ranked ids over budget. Returned ids map back
-/// through the catalog to verbatim `SelectionMatch`es; an id outside the
-/// current candidate set is filtered and reported via
+/// `idEnumSchema(ids:)` gives that caller the id set. Returned ids map back
+/// through the catalog to verbatim `SelectionMatch`es; an id the catalog
+/// does not hold is filtered and reported via
 /// `RankDiagnostic.unknownSelectedId(id:)`.
 public actor SelectionTier {
     /// The full catalog this tier answers `search(intent:limit:)` calls
     /// over.
     private let catalog: any SelectionCatalog
 
-    /// This tier's session source, preamble, and capacity/candidate budgets.
+    /// This tier's session source, preamble, and capacity budget.
     private let config: SelectionConfig
 
     /// `assemblePrefix(preamble:catalog:)`, precomputed once at `init` since
     /// `catalog` never changes for this tier's lifetime.
     private let assembledPrefix: String
 
-    /// Called for every diagnostic this tier emits (currently
-    /// `.unknownSelectedId` and `.retrievalCut`).
-    private let onDiagnostic: @Sendable (RankDiagnostic) -> Void
+    /// `catalog.ids` split into the runs the over-budget path prompts, one
+    /// prompt per run (`candidateRuns(preamble:catalog:limit:)`).
+    /// Precomputed once at `init`, like `assembledPrefix`, and read only
+    /// when the whole prefix does not fit the budget.
+    private let candidateRuns: [[String]]
 
-    /// Ranks the whole catalog for one intent, best-first, always returning
-    /// exactly as many `SelectionMatch`es as the catalog has entries — the
-    /// over-budget path's source of top-M candidates, and the under-budget
-    /// path's source of the real `score`/`signals` every selected id
-    /// carries. A consumer composing this tier with FoundationModelsRanker's
-    /// own `HybridRanker` wires this to
-    /// `HybridRanker.fullOrdering(ids:documents:query:cosineScores:weights:)`
-    /// mapped into `SelectionMatch`; tests script it directly.
-    private let retrievalRanking: @Sendable (String) async -> [SelectionMatch]
+    /// Called for every diagnostic this tier emits (currently
+    /// `.unknownSelectedId`).
+    private let onDiagnostic: @Sendable (RankDiagnostic) -> Void
 
     /// This tier's cached root session — `nil` until the first under-budget
     /// `search(intent:limit:)` call creates and caches it.
     private var rootSession: (any AgentSession)?
 
+    /// The text between two candidate entries in an assembled prefix.
+    private static let candidateSeparator = "\n\n"
+
     /// Creates a selection tier over `catalog`, using `config`'s session
-    /// source, preamble, and budgets.
+    /// source, preamble, and budget.
     ///
     /// - Parameters:
     ///   - catalog: the catalog to answer `search(intent:limit:)` calls over.
-    ///   - config: this tier's session source, preamble, and budgets.
+    ///   - config: this tier's session source, preamble, and budget.
     ///   - onDiagnostic: called for every diagnostic this tier emits.
-    ///   - retrievalRanking: ranks the whole catalog for one intent,
-    ///     best-first — the over-budget path's source of top-M candidates,
-    ///     and the under-budget path's source of every selected id's real
-    ///     `score`/`signals`.
+    public init(
+        catalog: any SelectionCatalog,
+        config: SelectionConfig,
+        onDiagnostic: @escaping @Sendable (RankDiagnostic) -> Void
+    ) {
+        self.catalog = catalog
+        self.config = config
+        self.assembledPrefix = Self.assemblePrefix(preamble: config.preamble, catalog: catalog)
+        self.candidateRuns = Self.candidateRuns(
+            preamble: config.preamble,
+            catalog: catalog,
+            limit: config.capacityCharacterLimit
+        )
+        self.onDiagnostic = onDiagnostic
+    }
+
+    /// Creates a selection tier and ignores `retrievalRanking`.
+    ///
+    /// The tier ranks nothing since task ^kqp9e5e, so the closure is never
+    /// called. This initializer keeps a consumer that still passes one
+    /// compiling (`FoundationModelsMetadataRegistry`'s `MetadataSearcher`
+    /// builds the tier this way) until it moves to
+    /// `init(catalog:config:onDiagnostic:)`.
+    ///
+    /// - Parameters:
+    ///   - catalog: the catalog to answer `search(intent:limit:)` calls over.
+    ///   - config: this tier's session source, preamble, and budget.
+    ///   - onDiagnostic: called for every diagnostic this tier emits.
+    ///   - retrievalRanking: ignored. The tier makes one prompt that picks
+    ///     and never ranks the catalog.
+    @available(
+        *, deprecated,
+        message: "The selection tier never ranks the catalog; `retrievalRanking` is ignored. Use init(catalog:config:onDiagnostic:)."
+    )
     public init(
         catalog: any SelectionCatalog,
         config: SelectionConfig,
         onDiagnostic: @escaping @Sendable (RankDiagnostic) -> Void,
         retrievalRanking: @escaping @Sendable (String) async -> [SelectionMatch]
     ) {
-        self.catalog = catalog
-        self.config = config
-        self.assembledPrefix = Self.assemblePrefix(preamble: config.preamble, catalog: catalog)
-        self.onDiagnostic = onDiagnostic
-        self.retrievalRanking = retrievalRanking
+        self.init(catalog: catalog, config: config, onDiagnostic: onDiagnostic)
     }
 
-    /// Answers one `search(intent:limit:)` call.
+    /// Answers one `search(intent:limit:)` call with one prompt per run of
+    /// candidates, and no retrieval pass.
     ///
     /// Under budget: reuses (creating on first use) this tier's cached root
     /// session, seeded with the full assembled prefix, and `fork()`s a fresh
     /// child per call so the prefix's prefilled compute is inherited rather
-    /// than replayed; `retrievalRanking` then ranks the whole catalog once
-    /// so every selected id carries its real fused `score`/`signals`. The
-    /// whole catalog stays selectable — no candidate cut happens, so no
-    /// `.retrievalCut` is reported. That enrichment costs one
-    /// `retrievalRanking` pass per call, which includes one query-embedding
-    /// call when the consumer's ranking uses an embedder. Over budget: ranks
-    /// the whole catalog and gives a one-off session the top-M
-    /// candidates (`overBudgetSearch(intent:limit:)`, plan.md §6) — no
-    /// caching, and no cached root to fork.
+    /// than replayed. One prompt goes out, and its answer is the result.
+    ///
+    /// Over budget, the tier splits the catalog rather than cutting it. The
+    /// catalog ids are divided, in catalog order, into runs whose assembled
+    /// prefix each fits `capacityCharacterLimit` (`candidateRuns`). An entry
+    /// that does not fit the budget alone still gets a run of its own,
+    /// because the tier cannot make a prompt smaller than one entry. Each
+    /// run gets one prompt on a one-off session, and every run is prompted
+    /// before the result is cut to `limit`, so a later run's pick is never
+    /// lost to an early stop. The answers are merged in run order, then in
+    /// the model's order inside each run. The cost is one prompt per run per
+    /// search, and no retrieval ranking picks which ids the model sees:
+    /// every id reaches exactly one prompt.
+    ///
+    /// A `.session` source is forked once per prompt, so a session whose
+    /// `fork()` gives back `self` (`LanguageModelSession`) adds one turn per
+    /// run to its transcript on an over-budget search.
     ///
     /// - Parameters:
     ///   - intent: the plain-language search intent.
     ///   - limit: the maximum number of matches to return. `limit <= 0`
-    ///     yields an empty result without forking, creating a session, or
-    ///     ranking anything.
-    /// - Returns: the selected ids' verbatim `SelectionMatch`es, each
-    ///   carrying the real fused `score`/`signals` `retrievalRanking`
-    ///   reported for it, at most `limit`.
+    ///     yields an empty result without forking or creating a session.
+    /// - Returns: the selected ids' verbatim `SelectionMatch`es, in the
+    ///   model's order, each scored by its position (`1 / rank`) and
+    ///   carrying no `signals`, at most `limit`.
     /// - Throws: whatever the underlying session's
     ///   `fork()`/`respond(to:generating:)` throws.
     public func search(intent: String, limit: Int) async throws -> [SelectionMatch] {
         guard limit > 0 else { return [] }
         guard assembledPrefix.count <= config.capacityCharacterLimit else {
-            return try await overBudgetSearch(intent: intent, limit: limit)
+            return matches(forIDs: try await selectFromEveryRun(intent: intent), limit: limit)
         }
 
         let child = try await cachedRootSession().fork()
@@ -150,16 +186,7 @@ public actor SelectionTier {
             to: prompt(prefix: assembledPrefix, intent: intent),
             generating: Selection.self
         )
-        // Ranked after the model call, so a throwing session never pays the
-        // retrieval (and query-embedding) cost -- the full ordering resolves
-        // every catalog id, including the zero-scored tail, to its real
-        // fused score/signals.
-        let ranked = await retrievalRanking(intent)
-        return matches(
-            forIDs: selection.ids,
-            limit: limit,
-            retrievalMatches: Dictionary(uniqueKeysWithValues: ranked.map { ($0.id, $0) })
-        )
+        return matches(forIDs: selection.ids, limit: limit)
     }
 
     /// Returns this tier's cached root session, creating and caching it on
@@ -187,7 +214,7 @@ public actor SelectionTier {
         return session
     }
 
-    /// Assembles the prompt for one `search(intent:limit:)` call.
+    /// Assembles the prompt for one model call.
     ///
     /// Both the cached-root path and the over-budget path prompt through
     /// this one function, so the two cannot drift apart.
@@ -215,7 +242,7 @@ public actor SelectionTier {
     ///
     /// - Parameters:
     ///   - prefix: this call's assembled candidate prefix -- the whole
-    ///     catalog under budget, this round's top-M candidates over budget.
+    ///     catalog under budget, one run's candidates over budget.
     ///   - intent: the plain-language search intent.
     /// - Returns: the prompt text to send.
     private func prompt(prefix: String, intent: String) -> String {
@@ -228,103 +255,124 @@ public actor SelectionTier {
         }
     }
 
-    // MARK: - Over budget: retrieval top-M + one-off session
+    // MARK: - Over budget: one prompt per run of candidates
 
-    /// Answers one over-budget `search(intent:limit:)` call (plan.md §6
-    /// "Over budget"): ranks the whole catalog through `retrievalRanking`,
-    /// takes the top `config.candidateLimit` candidates (best-first —
-    /// always `min(config.candidateLimit, considered)` of them, even when
-    /// few or none score positively, so the model always has a full
-    /// candidate set to pick from), reports the cut via
-    /// `.retrievalCut(considered:kept:)`, and answers on a **fresh,
-    /// uncached** one-off session carrying exactly those candidates' ids and
-    /// `summaryBlock(forID:)`s — there is no stable prefix here to reuse,
-    /// since the candidate set differs per intent. A `.factory` source makes
-    /// that session and never forks it; a `.session` source forks the
+    /// Answers one over-budget search: prompts every run of `candidateRuns`
+    /// in turn and merges the answered ids in run order.
+    ///
+    /// The runs are prompted one after another, not concurrently, because a
+    /// `.session` source forks one live session whose transcript grows with
+    /// each prompt, and because the merged order is the run order.
+    ///
+    /// - Parameter intent: the plain-language search intent.
+    /// - Returns: every id the model answered, run by run, in the model's
+    ///   order inside each run. Not yet resolved, deduplicated, or cut to a
+    ///   limit; `matches(forIDs:limit:)` does that.
+    /// - Throws: whatever a one-off session's `fork()` or
+    ///   `respond(to:generating:)` throws.
+    private func selectFromEveryRun(intent: String) async throws -> [String] {
+        var selectedIDs: [String] = []
+        for run in candidateRuns {
+            let prefix = Self.assemblePrefix(preamble: config.preamble, ids: run, catalog: catalog)
+            let session = try await oneOffSession(instructions: prefix)
+            let selection = try await session.respond(
+                to: prompt(prefix: prefix, intent: intent),
+                generating: Selection.self
+            )
+            selectedIDs.append(contentsOf: selection.ids)
+        }
+        return selectedIDs
+    }
+
+    /// Makes the session one over-budget prompt goes to.
+    ///
+    /// There is no stable prefix to cache over budget, since each run has
+    /// its own. A `.factory` source makes a fresh session seeded with
+    /// `instructions` and never forks it; a `.session` source forks the
     /// supplied session, because a live session takes no new instructions.
     ///
-    /// - Parameters:
-    ///   - intent: the plain-language search intent.
-    ///   - limit: the maximum number of matches to return.
-    /// - Returns: the selected candidates' verbatim `SelectionMatch`es,
-    ///   carrying the real retrieval `score`/`signals` that ranked them, at
-    ///   most `limit`.
-    /// - Throws: whatever the one-off session's `respond(to:generating:)`
-    ///   throws.
-    private func overBudgetSearch(intent: String, limit: Int) async throws -> [SelectionMatch] {
-        let ranked = await retrievalRanking(intent)
-        let candidates = Array(ranked.prefix(config.candidateLimit))
-        onDiagnostic(.retrievalCut(considered: ranked.count, kept: candidates.count))
-
-        // Nothing to seed a session with -- and nothing worth asking a
-        // model to choose among -- when the catalog itself is empty.
-        guard !candidates.isEmpty else { return [] }
-
-        let candidateIDs = candidates.map(\.id)
-        let prefix = Self.assemblePrefix(preamble: config.preamble, ids: candidateIDs, catalog: catalog)
-        // There is no cached root here, so a `.session` source forks the
-        // supplied session for this one call.
-        let session: any AgentSession
+    /// - Parameter instructions: the run's assembled prefix.
+    /// - Returns: the session to prompt for this run.
+    /// - Throws: whatever the supplied session's `fork()` throws.
+    private func oneOffSession(instructions: String) async throws -> any AgentSession {
         switch config.sessionSource {
         case .factory(let makeSession):
-            session = makeSession(prefix)
+            return makeSession(instructions)
         case .session(let suppliedSession):
-            session = try await suppliedSession.fork()
+            return try await suppliedSession.fork()
         }
-        let selection = try await session.respond(
-            to: prompt(prefix: prefix, intent: intent),
-            generating: Selection.self
-        )
-        return matches(
-            forIDs: selection.ids,
-            limit: limit,
-            allowedIDs: Set(candidateIDs),
-            retrievalMatches: Dictionary(uniqueKeysWithValues: candidates.map { ($0.id, $0) })
-        )
     }
+
+    /// Splits `catalog.ids`, in catalog order, into runs whose assembled
+    /// prefix (`assemblePrefix(preamble:ids:catalog:)`) each fits `limit`
+    /// characters.
+    ///
+    /// The split is greedy: an id joins the current run while the run's
+    /// prefix stays at or under `limit`, and starts a new run otherwise. An
+    /// entry that does not fit the budget alone still makes a run of its
+    /// own, so no id is dropped. An id the catalog has no summary for is
+    /// left out, exactly as `assemblePrefix` leaves it out. The whole
+    /// catalog fits one run when its full prefix fits the budget.
+    ///
+    /// The count is kept incrementally from the parts' own counts. A
+    /// grapheme cluster can only merge across a join, never split, so the
+    /// sum of the parts is never less than the joined prefix's count and a
+    /// run that passes here fits in fact.
+    ///
+    /// - Parameters:
+    ///   - preamble: the selection guidance every run's prefix starts with.
+    ///   - catalog: the catalog whose ids are split.
+    ///   - limit: the character budget one run's prefix must fit.
+    /// - Returns: the runs, in catalog order; empty for a catalog with no
+    ///   summarized id.
+    static func candidateRuns(preamble: String, catalog: any SelectionCatalog, limit: Int) -> [[String]] {
+        let headerCount = assemblePrefix(preamble: preamble, ids: [], catalog: catalog).count
+        var runs: [[String]] = []
+        var run: [String] = []
+        var runCount = headerCount
+        for id in catalog.ids {
+            guard let entry = candidateEntry(forID: id, catalog: catalog) else { continue }
+            if !run.isEmpty, runCount + candidateSeparator.count + entry.count > limit {
+                runs.append(run)
+                run = []
+                runCount = headerCount
+            }
+            runCount += (run.isEmpty ? 0 : candidateSeparator.count) + entry.count
+            run.append(id)
+        }
+        if !run.isEmpty {
+            runs.append(run)
+        }
+        return runs
+    }
+
+    // MARK: - Verbatim lookup and order scores
 
     /// Maps model-selected `ids` back through the catalog to verbatim
     /// `SelectionMatch`es (plan.md §6 "Verbatim lookup"), filtering any id
-    /// not resolvable and reporting it via `.unknownSelectedId` — the
-    /// backstop against a model that answers with an id the current
-    /// candidate set does not hold — deduplicating repeats (first
-    /// occurrence wins, which keeps the model's own call-order intent)
-    /// without reporting a diagnostic for them, and truncating to `limit`.
+    /// the catalog does not hold and reporting it via `.unknownSelectedId`
+    /// — the backstop against a model that answers with text that is not an
+    /// id — deduplicating repeats (first occurrence wins, which keeps the
+    /// model's own call-order intent) without reporting a diagnostic for
+    /// them, and truncating to `limit`.
+    ///
+    /// Each match is scored by its position among the kept ids
+    /// (`orderScore(rank:)`) and carries no `signals`: no retrieval signal
+    /// enters a selection.
     ///
     /// - Parameters:
     ///   - ids: the model-selected ids, in the order the model returned them.
     ///   - limit: the maximum number of matches to return.
-    ///   - allowedIDs: restricts resolution to this id set (the over-budget
-    ///     path's current candidates) in addition to the catalog itself; an
-    ///     id absent from `allowedIDs` is treated exactly like an id absent
-    ///     from the catalog. `nil` (the under-budget default) allows any
-    ///     catalog id.
-    ///   - retrievalMatches: the retrieval `SelectionMatch` (real fused
-    ///     `score` and `signals`) for every resolvable id, keyed by id — the
-    ///     full-catalog ordering under budget, this round's candidates over
-    ///     budget. An id absent from it is treated exactly like an id absent
-    ///     from the catalog (structurally unreachable for both callers:
-    ///     `retrievalRanking` covers every catalog id, and the over-budget
-    ///     `allowedIDs` are exactly its candidates' keys).
-    /// - Returns: the verbatim `SelectionMatch`es for every known, allowed,
-    ///   first-seen id, each carrying its retrieval `score`/`signals`, at
-    ///   most `limit`.
-    private func matches(
-        forIDs ids: [String],
-        limit: Int,
-        allowedIDs: Set<String>? = nil,
-        retrievalMatches: [String: SelectionMatch]
-    ) -> [SelectionMatch] {
+    /// - Returns: the verbatim `SelectionMatch`es for every known, first-seen
+    ///   id, in order, at most `limit`.
+    private func matches(forIDs ids: [String], limit: Int) -> [SelectionMatch] {
         var results: [SelectionMatch] = []
         results.reserveCapacity(min(ids.count, limit))
         var seenIDs: Set<String> = []
         for id in ids {
             guard results.count < limit else { break }
             guard seenIDs.insert(id).inserted else { continue }
-            guard allowedIDs?.contains(id) ?? true,
-                let block = catalog.block(forID: id),
-                let retrievalMatch = retrievalMatches[id]
-            else {
+            guard let block = catalog.block(forID: id) else {
                 onDiagnostic(.unknownSelectedId(id: id))
                 continue
             }
@@ -332,12 +380,24 @@ public actor SelectionTier {
                 SelectionMatch(
                     id: id,
                     block: block,
-                    score: retrievalMatch.score,
-                    signals: retrievalMatch.signals
+                    score: Self.orderScore(rank: results.count + 1),
+                    signals: nil
                 )
             )
         }
         return results
+    }
+
+    /// The score of the pick at 1-based `rank` in the model's answer: the
+    /// reciprocal of the rank, so the first pick scores `1.0`, the second
+    /// `0.5`, the n-th `1 / n`. Monotonic in the model's order and
+    /// independent of how many picks follow, so the same pick order gives
+    /// the same scores whatever the answer's length.
+    ///
+    /// - Parameter rank: the pick's 1-based position among the kept ids.
+    /// - Returns: `1 / rank`.
+    static func orderScore(rank: Int) -> Double {
+        1.0 / Double(rank)
     }
 
     // MARK: - Prefix assembly
@@ -361,9 +421,9 @@ public actor SelectionTier {
     /// set (plan.md §6): `preamble` followed by a `# Candidates` header and
     /// one `candidateEntry(forID:catalog:)` per id, in `ids`' order —
     /// `assemblePrefix(preamble:catalog:)`'s whole-catalog case is
-    /// `ids: catalog.ids`; the over-budget path passes the top-M ranked ids
-    /// instead, best-first. An id the catalog has no summary for is left
-    /// out, exactly as the catalog itself reports it absent.
+    /// `ids: catalog.ids`; the over-budget path passes one run of ids
+    /// instead. An id the catalog has no summary for is left out, exactly
+    /// as the catalog itself reports it absent.
     ///
     /// - Parameters:
     ///   - preamble: the selection guidance to prepend.
@@ -372,7 +432,7 @@ public actor SelectionTier {
     /// - Returns: the assembled prefix text.
     public static func assemblePrefix(preamble: String, ids: [String], catalog: any SelectionCatalog) -> String {
         let entries = ids.compactMap { candidateEntry(forID: $0, catalog: catalog) }
-        return "\(preamble)\n\n# Candidates\n\(entries.joined(separator: "\n\n"))"
+        return "\(preamble)\n\n# Candidates\n\(entries.joined(separator: candidateSeparator))"
     }
 
     /// Renders one candidate's prefix entry: the candidate id as a markdown
@@ -382,8 +442,9 @@ public actor SelectionTier {
     /// tells the model "Do not invent ids", so the prefix must show which
     /// ids exist; a prefix of bare summaries makes the model answer with a
     /// summary, which then resolves to nothing and reports
-    /// `.unknownSelectedId`. Both `assemblePrefix` overloads render through
-    /// this one function, so the two paths cannot drift apart.
+    /// `.unknownSelectedId`. Both `assemblePrefix` overloads and
+    /// `candidateRuns` render through this one function, so the paths
+    /// cannot drift apart.
     ///
     /// - Parameters:
     ///   - id: the candidate id to render.
@@ -414,8 +475,8 @@ public actor SelectionTier {
     /// `Grammar.jsonSchema(SelectionTier.idEnumSchema(ids: ids))`.
     ///
     /// - Parameter ids: the candidate ids to limit the output to. Use the
-    ///   full catalog's ids under budget, or the top-M ranked ids over
-    ///   budget.
+    ///   full catalog's ids under budget, or the ids of one prompt's run
+    ///   over budget.
     /// - Returns: the JSON Schema source text.
     /// - Throws: an encoding error if `Selection.generationSchema` cannot be
     ///   encoded to JSON. This is not expected for a valid `@Generable` type.

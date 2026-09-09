@@ -11,6 +11,11 @@
 // session's grammar is set at creation, and a `fork()` of that session
 // inherits it. `SelectionTier.idEnumSchema(ids:)` gives such a caller the id
 // set.
+//
+// Task ^kqp9e5e removed `candidateLimit`. It sized the retrieval cut the
+// over-budget path made before its one-off prompt. The tier now splits an
+// over-budget catalog into several prompts and cuts nothing, so the knob had
+// no function left.
 
 /// Where a selection tier gets the session it asks the model through.
 ///
@@ -27,13 +32,14 @@ public enum SelectionSessionSource: Sendable {
     case factory(@Sendable (String) -> any AgentSession)
 
     /// Reuses one supplied session. The tier forks the session for each
-    /// call, and the prefix rides above the `# Task` heading on each prompt.
+    /// prompt, and the prefix rides above the `# Task` heading on each
+    /// prompt.
     case session(any AgentSession)
 }
 
 /// Configuration for a selection tier: how selection sessions are created,
-/// what guidance seeds the assembled prefix, and the capacity/candidate
-/// budgets that decide between the cached-root and one-off session paths.
+/// what guidance seeds the assembled prefix, and the capacity budget that
+/// decides between the cached-root path and the split, one-off session path.
 ///
 /// Generalizes Multitool's own `Librarian` initializer parameters
 /// (`capacityCharacterLimit`, `makeSession`) into one value type so a
@@ -46,13 +52,9 @@ public struct SelectionConfig: Sendable {
     /// `Librarian.defaultCapacityCharacterLimit`.
     public static let defaultCapacityCharacterLimit = 32_000
 
-    /// The default number of top-ranked candidates the over-budget path
-    /// seeds its one-off session with.
-    public static let defaultCandidateLimit = 24
-
     /// Where this tier's sessions come from -- the seam a selection tier
     /// drives both the cached root session and the over-budget one-off
-    /// session through. `Sendable` so it can cross a selection tier's actor
+    /// sessions through. `Sendable` so it can cross a selection tier's actor
     /// isolation boundary.
     ///
     /// A caller that wants guided generation applies its own grammar when it
@@ -68,13 +70,12 @@ public struct SelectionConfig: Sendable {
     /// The assembled prefix's character budget. The budget measures the full
     /// prefix text: the preamble, the `# Candidates` header, and one
     /// `## <id>` heading above each candidate's summary block. At or under
-    /// this budget, the cached-root + fork-per-call path runs. Negative
-    /// values are clamped to `0`.
+    /// this budget, the cached-root + fork-per-call path runs with one
+    /// prompt. Over it, the tier splits the catalog into runs whose prefix
+    /// each fits this budget and sends one prompt per run
+    /// (`SelectionTier.search(intent:limit:)`). Negative values are clamped
+    /// to `0`.
     public var capacityCharacterLimit: Int
-
-    /// Over budget, how many top-ranked retrieval candidates seed the
-    /// one-off session. Negative values are clamped to `0`.
-    public var candidateLimit: Int
 
     /// Creates a selection tier configuration that makes a session for each
     /// assembled prefix -- a `.factory` session source.
@@ -86,19 +87,15 @@ public struct SelectionConfig: Sendable {
     ///     prefix. Defaults to `.selectionDefault`.
     ///   - capacityCharacterLimit: the assembled prefix's character
     ///     budget. Defaults to `defaultCapacityCharacterLimit`.
-    ///   - candidateLimit: the over-budget top-M candidate count. Defaults
-    ///     to `defaultCandidateLimit`.
     public init(
         model: @escaping @Sendable (String) -> any AgentSession,
         preamble: String = .selectionDefault,
-        capacityCharacterLimit: Int = SelectionConfig.defaultCapacityCharacterLimit,
-        candidateLimit: Int = SelectionConfig.defaultCandidateLimit
+        capacityCharacterLimit: Int = SelectionConfig.defaultCapacityCharacterLimit
     ) {
         self.init(
             sessionSource: .factory(model),
             preamble: preamble,
-            capacityCharacterLimit: capacityCharacterLimit,
-            candidateLimit: candidateLimit
+            capacityCharacterLimit: capacityCharacterLimit
         )
     }
 
@@ -106,32 +103,28 @@ public struct SelectionConfig: Sendable {
     /// a `.session` session source.
     ///
     /// A live session takes no new instructions, so the tier forks this
-    /// session for each call and puts the assembled prefix in the prompt.
+    /// session for each prompt and puts the assembled prefix in the prompt.
     ///
     /// - Parameters:
-    ///   - session: the session every selection call forks a child from.
+    ///   - session: the session every selection prompt forks a child from.
     ///   - preamble: the selection guidance prepended to every assembled
     ///     prefix. Defaults to `.selectionDefault`.
     ///   - capacityCharacterLimit: the assembled prefix's character
     ///     budget. Defaults to `defaultCapacityCharacterLimit`.
-    ///   - candidateLimit: the over-budget top-M candidate count. Defaults
-    ///     to `defaultCandidateLimit`.
     public init(
         session: any AgentSession,
         preamble: String = .selectionDefault,
-        capacityCharacterLimit: Int = SelectionConfig.defaultCapacityCharacterLimit,
-        candidateLimit: Int = SelectionConfig.defaultCandidateLimit
+        capacityCharacterLimit: Int = SelectionConfig.defaultCapacityCharacterLimit
     ) {
         self.init(
             sessionSource: .session(session),
             preamble: preamble,
-            capacityCharacterLimit: capacityCharacterLimit,
-            candidateLimit: candidateLimit
+            capacityCharacterLimit: capacityCharacterLimit
         )
     }
 
     /// Creates a selection tier configuration from an already-chosen session
-    /// source -- the one place the budgets are clamped, so both public
+    /// source -- the one place the budget is clamped, so both public
     /// initializers above clamp identically.
     ///
     /// - Parameters:
@@ -139,17 +132,14 @@ public struct SelectionConfig: Sendable {
     ///   - preamble: the selection guidance prepended to every assembled
     ///     prefix.
     ///   - capacityCharacterLimit: the assembled prefix's character budget.
-    ///   - candidateLimit: the over-budget top-M candidate count.
     private init(
         sessionSource: SelectionSessionSource,
         preamble: String,
-        capacityCharacterLimit: Int,
-        candidateLimit: Int
+        capacityCharacterLimit: Int
     ) {
         self.sessionSource = sessionSource
         self.preamble = preamble
         self.capacityCharacterLimit = max(0, capacityCharacterLimit)
-        self.candidateLimit = max(0, candidateLimit)
     }
 }
 

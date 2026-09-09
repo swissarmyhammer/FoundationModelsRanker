@@ -3,300 +3,266 @@ import Testing
 
 @testable import FoundationModelsRanker
 
-/// Tests for the selection tier's over-budget path (plan.md §6 phase 3):
-/// when the assembled prefix (the preamble, the `# Candidates` header, and
-/// one `## <id>` heading above each candidate's `summaryBlock(forID:)`)
-/// exceeds `capacityCharacterLimit`, the injected `retrievalRanking`
-/// closure ranks the whole catalog and the
-/// top-`candidateLimit` candidates (best-first) seed a fresh, uncached,
-/// unforked one-off session — carrying those candidate ids only — with the
-/// cut reported via `RankDiagnostic.retrievalCut(considered:kept:)`.
+/// Tests for the selection tier's over-budget path: when the assembled
+/// prefix (the preamble, the `# Candidates` header, and one `## <id>`
+/// heading above each candidate's `summaryBlock(forID:)`) exceeds
+/// `capacityCharacterLimit`, the tier splits the catalog ids, in catalog
+/// order, into runs whose assembled prefix each fits the budget, and sends
+/// one prompt for each run. Every id reaches one prompt. No retrieval
+/// ranking picks the candidates, and no `.retrievalCut` is reported.
 ///
-/// Ported from FoundationModelsMetadataRegistry's
-/// `Tests/FoundationModelsMetadataRegistryTests/OverBudgetTests.swift`,
-/// driven directly against `SelectionTier` (rather than through a
-/// `MetadataSearcher`-equivalent facade, which doesn't exist yet in
-/// FoundationModelsRanker — that's the separate `Searcher` facade task): `retrievalRanking`
-/// is a scripted closure standing in for the real BM25/trigram/cosine tier
-/// (`HybridRanker.fullOrdering`, wired up once the `Searcher` facade
-/// composes this tier with it) — zero GPU, no external dependency, the same
-/// pattern `SelectionTests` established for the under-budget path.
-///
-/// The source suite's `.auto` mode resolution tests
-/// (`autoModeResolvesToSelectionWhenASessionFactoryIsConfigured`,
-/// `autoModeFallsBackToRetrievalWhenNoSessionFactoryIsConfigured`) and the
-/// no-config-throws test (`selectionModeWithNoConfigStillThrowsSelectionTierUnavailable`)
-/// exercise a `mode: .selection/.retrieval/.auto` facade concept
-/// `SelectionTier` itself has no notion of — that coverage belongs to the
-/// `Searcher` facade task, not this port.
+/// Driven directly against `SelectionTier` with scripted `AgentSession`
+/// fakes (`Support/ScriptedAgentSession.swift`) over a
+/// `FixtureSelectionCatalog` -- zero GPU, no external dependency, the same
+/// pattern `SelectionTests` uses for the under-budget path.
 struct OverBudgetTests {
     // MARK: - Fixtures
 
-    /// Five items where only `alpha` lexically/fuzzily overlaps with the
-    /// `"alpha"` intent used throughout this file — `bravo`/`charlie`/
-    /// `delta`/`echo` score `0.0` on every signal, so the over-budget
-    /// path's full-catalog ranking is deterministic: `alpha` first (a real
-    /// match), then the rest in catalog order (the zero-signal fallback
-    /// tail that guarantees the top-M candidate count regardless of how
-    /// sparse real matches are).
+    /// Five items whose ids and summaries all have the same length, so the
+    /// budget `twoCandidateLimit` fits exactly two entries in each prompt
+    /// and the runs are `expectedRuns`.
     static let catalog = FixtureSelectionCatalog([
         .init(id: "alpha", block: "alpha handles alpha tasks", summary: "SUMMARY_alpha"),
         .init(id: "bravo", block: "second unrelated block text", summary: "SUMMARY_bravo"),
-        .init(id: "charlie", block: "third unrelated block text", summary: "SUMMARY_charlie"),
-        .init(id: "delta", block: "fourth unrelated block text", summary: "SUMMARY_delta"),
-        .init(id: "echo", block: "fifth unrelated block text", summary: "SUMMARY_echo"),
+        .init(id: "delta", block: "third unrelated block text", summary: "SUMMARY_delta"),
+        .init(id: "gamma", block: "fourth unrelated block text", summary: "SUMMARY_gamma"),
+        .init(id: "kappa", block: "fifth unrelated block text", summary: "SUMMARY_kappa"),
     ])
 
-    /// A `capacityCharacterLimit` of `1` is smaller than the assembled
-    /// preamble alone, so any catalog (even a tiny one) is over budget —
-    /// the same trick `SelectionTests` used before this path existed.
+    /// The runs `twoCandidateLimit` splits `catalog` into, in catalog order.
+    static let expectedRuns = [["alpha", "bravo"], ["delta", "gamma"], ["kappa"]]
+
+    /// A budget that holds exactly two of `catalog`'s equal-length entries:
+    /// the assembled prefix of the first two ids, to the character.
+    static let twoCandidateLimit = prefix(for: ["alpha", "bravo"]).count
+
+    /// A `capacityCharacterLimit` of `1` is smaller than the preamble alone,
+    /// so no entry fits beside another and every entry gets a prompt of its
+    /// own.
     static let forcedOverBudgetLimit = 1
 
-    /// Scripted full-catalog ranking for `Self.catalog`, standing in for a
-    /// real retrieval tier's `HybridRanker.fullOrdering`-shaped output:
-    /// `alpha` first with real BM25-like signals, the rest in catalog order
-    /// with all-zero signals -- exactly `catalog.ids.count`-long, matching
-    /// `HybridRanker.fullOrdering`'s "always the full ordering" contract.
-    static func rankEntireCatalog(intent: String) async -> [SelectionMatch] {
-        catalog.ids.map { id in
-            if id == "alpha" {
-                return SelectionMatch(
-                    id: id,
-                    block: catalog.block(forID: id) ?? "",
-                    score: 0.9,
-                    signals: Signals(bm25: 5.0, trigram: 0.0, cosine: 0.0)
-                )
-            }
-            return SelectionMatch(
-                id: id,
-                block: catalog.block(forID: id) ?? "",
-                score: 0.0,
-                signals: Signals(bm25: 0.0, trigram: 0.0, cosine: 0.0)
-            )
+    /// The `limit` every search in this file asks for: more than the catalog
+    /// holds, so no test truncates by accident.
+    static let resultLimit = 5
+
+    /// The prefix a prompt for `run` carries.
+    ///
+    /// - Parameter run: the candidate ids of one prompt, in order.
+    /// - Returns: the assembled prefix for those ids.
+    static func prefix(for run: [String]) -> String {
+        SelectionTier.assemblePrefix(preamble: .selectionDefault, ids: run, catalog: catalog)
+    }
+
+    /// A tier over `catalog` that answers with `config` and records every
+    /// diagnostic in `recorder`.
+    ///
+    /// - Parameters:
+    ///   - config: the tier's session source and budget.
+    ///   - recorder: receives every diagnostic the tier reports.
+    /// - Returns: the tier under test.
+    static func makeTier(config: SelectionConfig, recorder: DiagnosticRecorder = DiagnosticRecorder()) -> SelectionTier {
+        SelectionTier(catalog: catalog, config: config, onDiagnostic: { recorder.record($0) })
+    }
+
+    // MARK: - Every id reaches one prompt
+
+    @Test
+    func overBudgetSendsEveryCatalogIdToExactlyOnePrompt() async throws {
+        let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha"]}"#])
+        let config = SelectionConfig(model: factory.makeSession, capacityCharacterLimit: Self.twoCandidateLimit)
+        let tier = Self.makeTier(config: config)
+
+        _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
+
+        // The heading line is matched whole, so an id that is a prefix of
+        // another id cannot count twice.
+        for id in Self.catalog.ids {
+            let promptsCarryingID = factory.receivedInstructions.filter { $0.contains("## \(id)\n") }
+            #expect(promptsCarryingID.count == 1, "\(id) must reach exactly one prompt")
         }
     }
 
-    // MARK: - Top-M membership and ordering
-
     @Test
-    func overBudgetSeedsAOneOffSessionWithTopMCandidatesInBestFirstOrder() async throws {
+    func overBudgetPromptsKeepCatalogOrderAndEachFitsTheBudget() async throws {
         let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha"]}"#])
-        let config = SelectionConfig(
-            model: factory.makeSession,
-            capacityCharacterLimit: Self.forcedOverBudgetLimit,
-            candidateLimit: 2
-        )
-        let tier = SelectionTier(
-            catalog: Self.catalog,
-            config: config,
-            onDiagnostic: { _ in },
-            retrievalRanking: Self.rankEntireCatalog
-        )
+        let config = SelectionConfig(model: factory.makeSession, capacityCharacterLimit: Self.twoCandidateLimit)
+        let tier = Self.makeTier(config: config)
 
-        _ = try await tier.search(intent: "alpha", limit: 5)
+        _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
 
-        let instructions = try #require(factory.receivedInstructions.first)
-        #expect(instructions.contains("SUMMARY_alpha"))
-        #expect(instructions.contains("SUMMARY_bravo"))
-        #expect(!instructions.contains("SUMMARY_charlie"))
-        #expect(!instructions.contains("SUMMARY_delta"))
-        #expect(!instructions.contains("SUMMARY_echo"))
-
-        let alphaRange = try #require(instructions.range(of: "SUMMARY_alpha"))
-        let bravoRange = try #require(instructions.range(of: "SUMMARY_bravo"))
-        #expect(alphaRange.lowerBound < bravoRange.lowerBound)
+        #expect(factory.receivedInstructions == Self.expectedRuns.map(Self.prefix(for:)))
+        for instructions in factory.receivedInstructions {
+            #expect(instructions.count <= Self.twoCandidateLimit)
+        }
     }
 
     @Test
-    func overBudgetInstructionsCarryOnlyTheTopMCandidateIds() async throws {
+    func anEntryThatDoesNotFitTheBudgetAloneStillGetsAPromptOfItsOwn() async throws {
         let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha"]}"#])
-        let config = SelectionConfig(
-            model: factory.makeSession,
-            capacityCharacterLimit: Self.forcedOverBudgetLimit,
-            candidateLimit: 2
-        )
-        let tier = SelectionTier(
-            catalog: Self.catalog,
-            config: config,
-            onDiagnostic: { _ in },
-            retrievalRanking: Self.rankEntireCatalog
-        )
+        let config = SelectionConfig(model: factory.makeSession, capacityCharacterLimit: Self.forcedOverBudgetLimit)
+        let tier = Self.makeTier(config: config)
 
-        _ = try await tier.search(intent: "alpha", limit: 5)
+        _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
 
-        // Each kept candidate is labelled by a markdown heading carrying its
-        // id, so the model can return an id instead of a description. A cut
-        // candidate's id must not appear at all -- the one-off session may
-        // only select from this round's candidates.
-        let instructions = try #require(factory.receivedInstructions.first)
-        #expect(instructions.contains("## alpha"))
-        #expect(instructions.contains("## bravo"))
-        #expect(!instructions.contains("charlie"))
+        // The tier cannot make a prompt smaller than one entry, so an entry
+        // over the budget is sent alone rather than dropped.
+        #expect(factory.receivedInstructions == Self.catalog.ids.map { Self.prefix(for: [$0]) })
+    }
+
+    // MARK: - Merged answer: prompt order, then the model's order
+
+    @Test
+    func overBudgetMergesAnsweredIdsInPromptOrderThenInTheModelsOrder() async throws {
+        // One session answers every prompt in turn, so the first prompt gets
+        // the first answer, and so on down the list.
+        let session = ScriptedAgentSession([
+            #"{"ids":["bravo","alpha"]}"#,
+            #"{"ids":["gamma"]}"#,
+            #"{"ids":[]}"#,
+        ])
+        let config = SelectionConfig(model: { _ in session }, capacityCharacterLimit: Self.twoCandidateLimit)
+        let tier = Self.makeTier(config: config)
+
+        let matches = try await tier.search(intent: "alpha", limit: Self.resultLimit)
+
+        #expect(matches.map(\.id) == ["bravo", "alpha", "gamma"])
+        #expect(matches.map(\.score) == [OrderScores.firstPick, OrderScores.secondPick, OrderScores.thirdPick])
+        #expect(matches.allSatisfy { $0.signals == nil })
+    }
+
+    @Test
+    func overBudgetResultsAreTruncatedToLimitAfterEveryPromptAnswered() async throws {
+        let session = ScriptedAgentSession([
+            #"{"ids":["alpha"]}"#,
+            #"{"ids":["delta"]}"#,
+            #"{"ids":["kappa"]}"#,
+        ])
+        let config = SelectionConfig(model: { _ in session }, capacityCharacterLimit: Self.twoCandidateLimit)
+        let tier = Self.makeTier(config: config)
+
+        let matches = try await tier.search(intent: "alpha", limit: 2)
+
+        // Every prompt is answered before the cut, so a later prompt's pick
+        // is never lost to an early stop.
+        #expect(session.callCount == Self.expectedRuns.count)
+        #expect(matches.map(\.id) == ["alpha", "delta"])
+    }
+
+    @Test
+    func anIdAnsweredFromAnotherPromptsCandidatesStillResolvesOnce() async throws {
+        // The catalog is the id set every prompt draws from, so an id the
+        // model names in one prompt and again in its own prompt resolves,
+        // and resolves one time only.
+        let session = ScriptedAgentSession([
+            #"{"ids":["kappa"]}"#,
+            #"{"ids":[]}"#,
+            #"{"ids":["kappa"]}"#,
+        ])
+        let recorder = DiagnosticRecorder()
+        let config = SelectionConfig(model: { _ in session }, capacityCharacterLimit: Self.twoCandidateLimit)
+        let tier = Self.makeTier(config: config, recorder: recorder)
+
+        let matches = try await tier.search(intent: "alpha", limit: Self.resultLimit)
+
+        #expect(matches.map(\.id) == ["kappa"])
+        #expect(recorder.diagnostics.isEmpty)
     }
 
     // MARK: - Session source: one supplied session vs a session factory
 
     @Test
-    func overBudgetSuppliedSessionIsPromptedWithTheTopMCandidatesOnly() async throws {
-        let session = ScriptedAgentSession([#"{"ids":["alpha"]}"#])
-        let config = SelectionConfig(
-            session: session,
-            capacityCharacterLimit: Self.forcedOverBudgetLimit,
-            candidateLimit: 2
-        )
-        let tier = SelectionTier(
-            catalog: Self.catalog,
-            config: config,
-            onDiagnostic: { _ in },
-            retrievalRanking: Self.rankEntireCatalog
-        )
+    func overBudgetSuppliedSessionIsForkedOncePerPromptWithThatPromptsCandidatesOnly() async throws {
+        let session = ScriptedAgentSession(Self.expectedRuns.map { _ in #"{"ids":["alpha"]}"# })
+        let config = SelectionConfig(session: session, capacityCharacterLimit: Self.twoCandidateLimit)
+        let tier = Self.makeTier(config: config)
 
-        _ = try await tier.search(intent: "alpha", limit: 5)
+        _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
 
-        // The prompt carries this round's candidate blocks and no other, so
-        // a supplied session sees the same cut a seeded session sees.
-        let prompt = try #require(session.receivedPrompts.first)
-        #expect(prompt.contains("SUMMARY_alpha"))
-        #expect(prompt.contains("SUMMARY_bravo"))
-        #expect(!prompt.contains("SUMMARY_charlie"))
-        #expect(!prompt.contains("SUMMARY_delta"))
-        #expect(!prompt.contains("SUMMARY_echo"))
-        #expect(prompt.hasSuffix("# Task\n\nalpha"))
+        #expect(session.forkCount == Self.expectedRuns.count)
+        // A live session takes no new instructions, so each prompt carries
+        // its own run's prefix above the intent, and no other run's.
+        let expectedPrompts = Self.expectedRuns.map { "\(Self.prefix(for: $0))\n\n# Task\n\nalpha" }
+        #expect(session.receivedPrompts == expectedPrompts)
     }
 
     @Test
     func overBudgetFactorySessionIsPromptedWithTheIntentUnderTheTaskHeading() async throws {
-        let session = ScriptedAgentSession([#"{"ids":["alpha"]}"#])
-        let config = SelectionConfig(
-            model: { _ in session },
-            capacityCharacterLimit: Self.forcedOverBudgetLimit,
-            candidateLimit: 2
-        )
-        let tier = SelectionTier(
-            catalog: Self.catalog,
-            config: config,
-            onDiagnostic: { _ in },
-            retrievalRanking: Self.rankEntireCatalog
-        )
+        let session = ScriptedAgentSession(Self.expectedRuns.map { _ in #"{"ids":["alpha"]}"# })
+        let config = SelectionConfig(model: { _ in session }, capacityCharacterLimit: Self.twoCandidateLimit)
+        let tier = Self.makeTier(config: config)
 
-        _ = try await tier.search(intent: "alpha", limit: 5)
+        _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
 
-        // The over-budget factory prompt carries no prefix, because the
-        // candidate prefix is the one-off session's instructions. It carries
-        // the same `# Task` heading the under-budget factory prompt carries,
-        // because both paths prompt through one function.
-        #expect(session.receivedPrompts == ["# Task\n\nalpha"])
+        // A factory session already holds its run's prefix as instructions,
+        // so each prompt carries the same `# Task` heading and the intent,
+        // exactly as the under-budget factory prompt does.
+        #expect(session.receivedPrompts == Self.expectedRuns.map { _ in "# Task\n\nalpha" })
     }
 
-    // MARK: - One-off session: no caching, no fork
+    // MARK: - One-off sessions: no caching, no fork
 
     @Test
-    func overBudgetCreatesAFreshSessionPerCallWithoutCaching() async throws {
+    func overBudgetCreatesAFreshSessionPerPromptWithoutCaching() async throws {
         let factoryCallCount = CallCounter()
         let config = SelectionConfig(
             model: { _ in
                 factoryCallCount.increment()
                 return ScriptedAgentSession([#"{"ids":["alpha"]}"#])
             },
-            capacityCharacterLimit: Self.forcedOverBudgetLimit,
-            candidateLimit: 2
+            capacityCharacterLimit: Self.twoCandidateLimit
         )
-        let tier = SelectionTier(
-            catalog: Self.catalog,
-            config: config,
-            onDiagnostic: { _ in },
-            retrievalRanking: Self.rankEntireCatalog
-        )
+        let tier = Self.makeTier(config: config)
 
-        _ = try await tier.search(intent: "alpha", limit: 5)
-        _ = try await tier.search(intent: "alpha", limit: 5)
+        _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
+        _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
 
-        // Unlike the cached-root path, a fresh session is created per call.
-        #expect(factoryCallCount.count == 2)
+        // Unlike the cached-root path, every prompt of every call gets a
+        // fresh session.
+        #expect(factoryCallCount.count == Self.expectedRuns.count * 2)
     }
 
     @Test
-    func overBudgetSessionIsNeverForked() async throws {
-        let session = ScriptedAgentSession([#"{"ids":["alpha"]}"#])
-        let config = SelectionConfig(
-            model: { _ in session },
-            capacityCharacterLimit: Self.forcedOverBudgetLimit,
-            candidateLimit: 2
-        )
-        let tier = SelectionTier(
-            catalog: Self.catalog,
-            config: config,
-            onDiagnostic: { _ in },
-            retrievalRanking: Self.rankEntireCatalog
-        )
+    func overBudgetFactorySessionIsNeverForked() async throws {
+        let session = ScriptedAgentSession(Self.expectedRuns.map { _ in #"{"ids":["alpha"]}"# })
+        let config = SelectionConfig(model: { _ in session }, capacityCharacterLimit: Self.twoCandidateLimit)
+        let tier = Self.makeTier(config: config)
 
-        _ = try await tier.search(intent: "alpha", limit: 5)
+        _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
 
         #expect(session.forkCount == 0)
-        #expect(session.callCount == 1)
+        #expect(session.callCount == Self.expectedRuns.count)
     }
 
-    // MARK: - `.retrievalCut` payload capture
+    // MARK: - Diagnostics
 
     @Test
-    func retrievalCutReportsAccurateConsideredAndKeptCounts() async throws {
+    func overBudgetReportsNoDiagnosticWhenEveryAnswerIsACatalogId() async throws {
         let recorder = DiagnosticRecorder()
         let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha"]}"#])
-        let config = SelectionConfig(
-            model: factory.makeSession,
-            capacityCharacterLimit: Self.forcedOverBudgetLimit,
-            candidateLimit: 2
-        )
-        let tier = SelectionTier(
-            catalog: Self.catalog,
-            config: config,
-            onDiagnostic: { recorder.record($0) },
-            retrievalRanking: Self.rankEntireCatalog
-        )
+        let config = SelectionConfig(model: factory.makeSession, capacityCharacterLimit: Self.twoCandidateLimit)
+        let tier = Self.makeTier(config: config, recorder: recorder)
 
-        _ = try await tier.search(intent: "alpha", limit: 5)
+        _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
 
-        #expect(recorder.diagnostics == [.retrievalCut(considered: 5, kept: 2)])
+        // No retrieval cut picks the candidates, so nothing is reported.
+        #expect(recorder.diagnostics.isEmpty)
     }
 
     @Test
-    func candidateCountIsClampedToCatalogSizeWhenCandidateLimitIsLarger() async throws {
+    func overBudgetIdOutsideTheCatalogIsFilteredAndReportedAsUnknown() async throws {
         let recorder = DiagnosticRecorder()
-        let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha"]}"#])
-        // Default `candidateLimit` (24) far exceeds this 5-item catalog.
-        let config = SelectionConfig(model: factory.makeSession, capacityCharacterLimit: Self.forcedOverBudgetLimit)
-        let tier = SelectionTier(
-            catalog: Self.catalog,
-            config: config,
-            onDiagnostic: { recorder.record($0) },
-            retrievalRanking: Self.rankEntireCatalog
-        )
+        let session = ScriptedAgentSession([
+            #"{"ids":["alpha","zulu"]}"#,
+            #"{"ids":[]}"#,
+            #"{"ids":[]}"#,
+        ])
+        let config = SelectionConfig(model: { _ in session }, capacityCharacterLimit: Self.twoCandidateLimit)
+        let tier = Self.makeTier(config: config, recorder: recorder)
 
-        _ = try await tier.search(intent: "alpha", limit: 5)
+        let matches = try await tier.search(intent: "alpha", limit: Self.resultLimit)
 
-        #expect(recorder.diagnostics == [.retrievalCut(considered: 5, kept: 5)])
-    }
-
-    @Test
-    func underBudgetSearchNeverFiresRetrievalCut() async throws {
-        let recorder = DiagnosticRecorder()
-        let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha"]}"#])
-        let config = SelectionConfig(model: factory.makeSession)
-        let tier = SelectionTier(
-            catalog: Self.catalog,
-            config: config,
-            onDiagnostic: { recorder.record($0) },
-            retrievalRanking: Self.rankEntireCatalog
-        )
-
-        _ = try await tier.search(intent: "alpha", limit: 5)
-
-        #expect(
-            !recorder.diagnostics.contains {
-                if case .retrievalCut = $0 { return true }
-                return false
-            }
-        )
+        #expect(matches.map(\.id) == ["alpha"])
+        #expect(recorder.diagnostics == [.unknownSelectedId(id: "zulu")])
     }
 
     @Test
@@ -313,83 +279,23 @@ struct OverBudgetTests {
         let tier = SelectionTier(
             catalog: FixtureSelectionCatalog([]),
             config: config,
-            onDiagnostic: { recorder.record($0) },
-            retrievalRanking: { _ in [] }
+            onDiagnostic: { recorder.record($0) }
         )
 
-        let matches = try await tier.search(intent: "alpha", limit: 5)
+        let matches = try await tier.search(intent: "alpha", limit: Self.resultLimit)
 
+        // No candidate, no prompt: there is nothing to ask a model to choose
+        // among, and nothing to report.
         #expect(matches.isEmpty)
         #expect(factoryCallCount.count == 0)
-        #expect(recorder.diagnostics == [.retrievalCut(considered: 0, kept: 0)])
-    }
-
-    // MARK: - Candidate-set-only verbatim lookup (this round's ids)
-
-    @Test
-    func idOutsideTopMCandidatesIsFilteredAndReportedAsUnknownEvenThoughItIsAValidCatalogID() async throws {
-        let recorder = DiagnosticRecorder()
-        // "charlie" is a real catalog id, but `candidateLimit: 2` excludes
-        // it from this round's candidates (alpha, bravo only) -- the
-        // one-off session may select from this round's candidates only,
-        // not from the wider catalog, so this must be treated as unknown
-        // even though "charlie" resolves in the catalog overall.
-        let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha","charlie"]}"#])
-        let config = SelectionConfig(
-            model: factory.makeSession,
-            capacityCharacterLimit: Self.forcedOverBudgetLimit,
-            candidateLimit: 2
-        )
-        let tier = SelectionTier(
-            catalog: Self.catalog,
-            config: config,
-            onDiagnostic: { recorder.record($0) },
-            retrievalRanking: Self.rankEntireCatalog
-        )
-
-        let matches = try await tier.search(intent: "alpha", limit: 5)
-
-        #expect(matches.map(\.id) == ["alpha"])
-        #expect(recorder.diagnostics.contains(.unknownSelectedId(id: "charlie")))
-    }
-
-    // MARK: - Retrieval-tier signals attach to over-budget results
-
-    @Test
-    func overBudgetResultsCarryTheRealRetrievalScoreAndSignalsOfThisRoundsCandidates() async throws {
-        let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha"]}"#])
-        let config = SelectionConfig(
-            model: factory.makeSession,
-            capacityCharacterLimit: Self.forcedOverBudgetLimit,
-            candidateLimit: 2
-        )
-        let tier = SelectionTier(
-            catalog: Self.catalog,
-            config: config,
-            onDiagnostic: { _ in },
-            retrievalRanking: Self.rankEntireCatalog
-        )
-
-        let matches = try await tier.search(intent: "alpha", limit: 5)
-
-        let alpha = try #require(matches.first)
-        #expect(alpha.id == "alpha")
-        // Retrieval genuinely ran to rank "alpha" -- the match carries the
-        // scripted ranking's real fused score and per-signal breakdown.
-        #expect(alpha.score > 0.0)
-        let signals = try #require(alpha.signals)
-        #expect(signals.bm25 > 0.0)
+        #expect(recorder.diagnostics.isEmpty)
     }
 
     // MARK: - Budget boundary
 
     @Test
     func prefixExactlyAtTheCapacityLimitUsesTheCachedRootPath() async throws {
-        let expectedPrefix = SelectionTier.assemblePrefix(
-            preamble: .selectionDefault,
-            ids: Self.catalog.ids,
-            catalog: Self.catalog
-        )
+        let fullPrefix = Self.prefix(for: Self.catalog.ids)
         let factoryCallCount = CallCounter()
         let root = RootSessionRespondCalledDirectlySession(forkResponses: [
             #"{"ids":["alpha"]}"#,
@@ -400,17 +306,12 @@ struct OverBudgetTests {
                 factoryCallCount.increment()
                 return root
             },
-            capacityCharacterLimit: expectedPrefix.count
+            capacityCharacterLimit: fullPrefix.count
         )
-        let tier = SelectionTier(
-            catalog: Self.catalog,
-            config: config,
-            onDiagnostic: { _ in },
-            retrievalRanking: Self.rankEntireCatalog
-        )
+        let tier = Self.makeTier(config: config)
 
-        _ = try await tier.search(intent: "alpha", limit: 5)
-        _ = try await tier.search(intent: "alpha", limit: 5)
+        _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
+        _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
 
         // Cached-root path: the factory runs exactly once, and every call
         // forks -- the boundary itself (`==`) still counts as "under
@@ -421,31 +322,17 @@ struct OverBudgetTests {
     }
 
     @Test
-    func prefixOneCharacterOverTheCapacityLimitUsesTheOneOffPath() async throws {
-        let expectedPrefix = SelectionTier.assemblePrefix(
-            preamble: .selectionDefault,
-            ids: Self.catalog.ids,
-            catalog: Self.catalog
-        )
-        let factoryCallCount = CallCounter()
-        let config = SelectionConfig(
-            model: { _ in
-                factoryCallCount.increment()
-                return ScriptedAgentSession([#"{"ids":["alpha"]}"#])
-            },
-            capacityCharacterLimit: expectedPrefix.count - 1
-        )
-        let tier = SelectionTier(
-            catalog: Self.catalog,
-            config: config,
-            onDiagnostic: { _ in },
-            retrievalRanking: Self.rankEntireCatalog
-        )
+    func prefixOneCharacterOverTheCapacityLimitSplitsTheCatalogIntoTwoPrompts() async throws {
+        let fullPrefix = Self.prefix(for: Self.catalog.ids)
+        let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha"]}"#])
+        let config = SelectionConfig(model: factory.makeSession, capacityCharacterLimit: fullPrefix.count - 1)
+        let tier = Self.makeTier(config: config)
 
-        _ = try await tier.search(intent: "alpha", limit: 5)
-        _ = try await tier.search(intent: "alpha", limit: 5)
+        _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
 
-        // One-off path: a fresh session per call, never cached.
-        #expect(factoryCallCount.count == 2)
+        // One character short of the whole catalog: the first four
+        // equal-length entries fit one prompt, and the last one gets its own.
+        let expectedRuns = [["alpha", "bravo", "delta", "gamma"], ["kappa"]]
+        #expect(factory.receivedInstructions == expectedRuns.map(Self.prefix(for:)))
     }
 }

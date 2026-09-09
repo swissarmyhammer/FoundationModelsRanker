@@ -105,13 +105,12 @@ let schema = try SelectionTier.idEnumSchema(ids: items.map(\.id))
 - `.retrieval` — the fused BM25 + trigram (+ cosine) ranking only; no
   session is ever consulted. Results carry the real fused `score` and
   per-signal `.signals`.
-- `.selection` — an agent picks from the top candidates; throws if no
-  `session:` is configured. Picks carry the real fused `score` and
-  per-signal `.signals` retrieval reports for the query: when the item
-  list fits the selection budget the whole catalog stays selectable and is
-  ranked once per search to attach those scores (one query-embedding call
-  when an `embedder:` is configured); once it doesn't fit, the one-off
-  fallback seeds itself from the top retrieval candidates.
+- `.selection` — one prompt asks the agent to pick from the whole item
+  list; throws if no `session:` is configured. No retrieval runs: picks
+  come back in the agent's order, each with an order `score` (the first
+  pick `1.0`, the n-th `1 / n`) and no `.signals`. When the item list does
+  not fit the selection budget, it is split into several prompts and every
+  item reaches exactly one of them; the answers are merged in prompt order.
 - `.auto` — selection when a session is configured, retrieval otherwise
   (the lead example's zero-config call resolves here).
 

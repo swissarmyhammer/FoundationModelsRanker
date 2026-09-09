@@ -5,11 +5,12 @@ import Testing
 
 /// Tests for the selection tier's under-budget path (plan.md §6 phase 3): a
 /// cached root session seeded once with the assembled prefix, `fork()` per
-/// `search()` call, the summary-vs-full block separation
-/// (`summaryBlock(forID:)` seeds the prefix; `block(forID:)` is what a
-/// `SelectionMatch` carries back verbatim), ids-only decoding, verbatim
-/// lookup by id, unknown-id filtering + diagnostic, and the id-enum JSON
-/// Schema's contents.
+/// `search()` call, one model call and no retrieval pass per search, the
+/// summary-vs-full block separation (`summaryBlock(forID:)` seeds the
+/// prefix; `block(forID:)` is what a `SelectionMatch` carries back
+/// verbatim), ids-only decoding, verbatim lookup by id, order scores,
+/// unknown-id filtering + diagnostic, and the id-enum JSON Schema's
+/// contents.
 ///
 /// Ported from FoundationModelsMetadataRegistry's
 /// `Tests/FoundationModelsMetadataRegistryTests/SelectionTests.swift`, driven
@@ -37,45 +38,6 @@ struct SelectionTests {
         .init(id: "status", block: "the full status block", summary: "reports the current release state"),
     ])
 
-    /// Scripted full-catalog ranking for `Self.catalog`, standing in for a
-    /// real retrieval tier's `HybridRanker.fullOrdering`-shaped output: one
-    /// entry per catalog id with a distinct fused score and per-signal
-    /// breakdown, so tests can assert that under-budget selections carry
-    /// exactly these values instead of a fixed sentinel.
-    static let rankedCatalog = [
-        SelectionMatch(
-            id: "deploy",
-            block: "ships containers to a kubernetes cluster",
-            score: 0.9,
-            signals: Signals(bm25: 4.2, trigram: 0.6, cosine: 0.0)
-        ),
-        SelectionMatch(
-            id: "rollback",
-            block: "reverts the last release",
-            score: 0.3,
-            signals: Signals(bm25: 1.1, trigram: 0.2, cosine: 0.0)
-        ),
-    ]
-
-    /// `rankedCatalog` as the `retrievalRanking` closure a tier under test
-    /// is constructed with.
-    static func rankEntireCatalog(intent: String) async -> [SelectionMatch] {
-        rankedCatalog
-    }
-
-    /// `rankedCatalog`'s entry for `id` -- the expected `score`/`signals`
-    /// source for assertions.
-    static func rankedMatch(_ id: String) -> SelectionMatch? {
-        rankedCatalog.first { $0.id == id }
-    }
-
-    /// A `limit <= 0` search short-circuits before ranking anything, so a
-    /// stub that records an `Issue` proves the point if it ever runs.
-    private static func neverCalledRetrievalRanking(_ intent: String) async -> [SelectionMatch] {
-        Issue.record("retrievalRanking should not run when the search short-circuits")
-        return []
-    }
-
     // MARK: - Cached root + fork-per-call
 
     @Test
@@ -92,8 +54,7 @@ struct SelectionTests {
         let tier = SelectionTier(
             catalog: Self.catalog,
             config: config,
-            onDiagnostic: { _ in },
-            retrievalRanking: Self.rankEntireCatalog
+            onDiagnostic: { _ in }
         )
 
         let first = try await tier.search(intent: "first task", limit: 5)
@@ -105,6 +66,45 @@ struct SelectionTests {
         #expect(factoryCallCount.count == 1)
         #expect(first.map(\.id) == ["deploy"])
         #expect(second.map(\.id) == ["rollback"])
+    }
+
+    // MARK: - One prompt that picks
+
+    @Test
+    func underBudgetSearchMakesExactlyOneModelCall() async throws {
+        // The one prompt is the whole search: the answer is the result, and
+        // nothing ranks the catalog after it.
+        let session = ScriptedAgentSession([#"{"ids":["deploy"]}"#])
+        let config = SelectionConfig(model: { _ in session })
+        let tier = SelectionTier(
+            catalog: Self.catalog,
+            config: config,
+            onDiagnostic: { _ in }
+        )
+
+        let matches = try await tier.search(intent: "ship the release", limit: 5)
+
+        #expect(session.callCount == 1)
+        #expect(matches.map(\.id) == ["deploy"])
+    }
+
+    @Test
+    func selectionScoresFollowTheModelsOrder() async throws {
+        // The model's order is the result's order, and each pick's score is
+        // the reciprocal of its rank: no retrieval signal enters a selection.
+        let factory = RecordingSessionFactory(responses: [#"{"ids":["status","deploy","rollback"]}"#])
+        let config = SelectionConfig(model: factory.makeSession)
+        let tier = SelectionTier(
+            catalog: Self.threeItemCatalog,
+            config: config,
+            onDiagnostic: { _ in }
+        )
+
+        let matches = try await tier.search(intent: "task", limit: 5)
+
+        #expect(matches.map(\.id) == ["status", "deploy", "rollback"])
+        #expect(matches.map(\.score) == [OrderScores.firstPick, OrderScores.secondPick, OrderScores.thirdPick])
+        #expect(matches.allSatisfy { $0.signals == nil })
     }
 
     // MARK: - Session source: one supplied session vs a session factory
@@ -119,8 +119,7 @@ struct SelectionTests {
         let tier = SelectionTier(
             catalog: Self.catalog,
             config: config,
-            onDiagnostic: { _ in },
-            retrievalRanking: Self.rankEntireCatalog
+            onDiagnostic: { _ in }
         )
 
         _ = try await tier.search(intent: "roll back the last deploy", limit: 5)
@@ -143,8 +142,7 @@ struct SelectionTests {
         let tier = SelectionTier(
             catalog: Self.catalog,
             config: config,
-            onDiagnostic: { _ in },
-            retrievalRanking: Self.rankEntireCatalog
+            onDiagnostic: { _ in }
         )
 
         let first = try await tier.search(intent: "first task", limit: 5)
@@ -170,8 +168,7 @@ struct SelectionTests {
         let tier = SelectionTier(
             catalog: Self.catalog,
             config: config,
-            onDiagnostic: { _ in },
-            retrievalRanking: Self.rankEntireCatalog
+            onDiagnostic: { _ in }
         )
 
         _ = try await tier.search(intent: "roll back the last deploy", limit: 5)
@@ -186,19 +183,12 @@ struct SelectionTests {
         let catalog = FixtureSelectionCatalog([
             .init(id: "deploy", block: "the full, long rendered block text", summary: "short summary")
         ])
-        let ranked = SelectionMatch(
-            id: "deploy",
-            block: "the full, long rendered block text",
-            score: 0.7,
-            signals: Signals(bm25: 2.0, trigram: 0.1, cosine: 0.0)
-        )
         let factory = RecordingSessionFactory(responses: [#"{"ids":["deploy"]}"#])
         let config = SelectionConfig(model: factory.makeSession)
         let tier = SelectionTier(
             catalog: catalog,
             config: config,
-            onDiagnostic: { _ in },
-            retrievalRanking: { _ in [ranked] }
+            onDiagnostic: { _ in }
         )
 
         let matches = try await tier.search(intent: "task", limit: 5)
@@ -209,9 +199,9 @@ struct SelectionTests {
 
         let match = try #require(matches.first)
         #expect(match.block == "the full, long rendered block text")
-        // The ranking's real fused score/signals attach even under budget.
-        #expect(match.score == ranked.score)
-        #expect(match.signals == ranked.signals)
+        // A selection pick carries its order score and no retrieval signals.
+        #expect(match.score == OrderScores.firstPick)
+        #expect(match.signals == nil)
     }
 
     // MARK: - Candidate ids in the assembled prefix
@@ -236,8 +226,7 @@ struct SelectionTests {
         let tier = SelectionTier(
             catalog: Self.catalog,
             config: config,
-            onDiagnostic: { _ in },
-            retrievalRanking: Self.rankEntireCatalog
+            onDiagnostic: { _ in }
         )
 
         _ = try await tier.search(intent: "task", limit: 5)
@@ -259,20 +248,16 @@ struct SelectionTests {
         let tier = SelectionTier(
             catalog: Self.catalog,
             config: config,
-            onDiagnostic: { _ in },
-            retrievalRanking: Self.rankEntireCatalog
+            onDiagnostic: { _ in }
         )
 
         let matches = try await tier.search(intent: "roll back the last deploy", limit: 5)
 
         #expect(matches.map(\.id) == ["rollback", "deploy"])
         #expect(matches.map(\.block) == ["reverts the last release", "ships containers to a kubernetes cluster"])
-        // Every match carries the fixture ranking's real fused score and
-        // per-signal breakdown, in the model's own call order -- never a
-        // fixed sentinel.
-        let expected = ["rollback", "deploy"].compactMap(Self.rankedMatch)
-        #expect(matches.map(\.score) == expected.map(\.score))
-        #expect(matches.map(\.signals) == expected.map(\.signals))
+        // Every match is scored by its place in the model's own call order.
+        #expect(matches.map(\.score) == [OrderScores.firstPick, OrderScores.secondPick])
+        #expect(matches.allSatisfy { $0.signals == nil })
     }
 
     @Test
@@ -282,8 +267,7 @@ struct SelectionTests {
         let tier = SelectionTier(
             catalog: Self.catalog,
             config: config,
-            onDiagnostic: { _ in },
-            retrievalRanking: Self.rankEntireCatalog
+            onDiagnostic: { _ in }
         )
 
         let matches = try await tier.search(intent: "roll back the last deploy", limit: 1)
@@ -301,8 +285,7 @@ struct SelectionTests {
         let tier = SelectionTier(
             catalog: Self.catalog,
             config: config,
-            onDiagnostic: { recorder.record($0) },
-            retrievalRanking: Self.rankEntireCatalog
+            onDiagnostic: { recorder.record($0) }
         )
 
         let matches = try await tier.search(intent: "task", limit: 5)
@@ -322,8 +305,7 @@ struct SelectionTests {
         let tier = SelectionTier(
             catalog: Self.catalog,
             config: config,
-            onDiagnostic: { _ in },
-            retrievalRanking: Self.rankEntireCatalog
+            onDiagnostic: { _ in }
         )
 
         let matches = try await tier.search(intent: "task", limit: 2)
@@ -341,8 +323,7 @@ struct SelectionTests {
         let tier = SelectionTier(
             catalog: Self.catalog,
             config: config,
-            onDiagnostic: { recorder.record($0) },
-            retrievalRanking: Self.rankEntireCatalog
+            onDiagnostic: { recorder.record($0) }
         )
 
         let matches = try await tier.search(intent: "nothing matches this", limit: 5)
@@ -360,10 +341,7 @@ struct SelectionTests {
         let tier = SelectionTier(
             catalog: FixtureSelectionCatalog([]),
             config: config,
-            onDiagnostic: { _ in },
-            // An empty catalog's full ordering is empty, matching
-            // `HybridRanker.fullOrdering`'s exactly-catalog-sized contract.
-            retrievalRanking: { _ in [] }
+            onDiagnostic: { _ in }
         )
 
         let matches = try await tier.search(intent: "anything", limit: 5)
@@ -388,8 +366,7 @@ struct SelectionTests {
         let tier = SelectionTier(
             catalog: Self.catalog,
             config: config,
-            onDiagnostic: { recorder.record($0) },
-            retrievalRanking: Self.rankEntireCatalog
+            onDiagnostic: { recorder.record($0) }
         )
 
         let matches = try await tier.search(intent: "task", limit: 5)
@@ -416,8 +393,7 @@ struct SelectionTests {
         let tier = SelectionTier(
             catalog: Self.catalog,
             config: config,
-            onDiagnostic: { recorder.record($0) },
-            retrievalRanking: Self.rankEntireCatalog
+            onDiagnostic: { recorder.record($0) }
         )
 
         let matches = try await tier.search(intent: "task", limit: 5)
@@ -438,8 +414,7 @@ struct SelectionTests {
         let tier = SelectionTier(
             catalog: Self.catalog,
             config: config,
-            onDiagnostic: { _ in },
-            retrievalRanking: Self.neverCalledRetrievalRanking
+            onDiagnostic: { _ in }
         )
 
         let matches = try await tier.search(intent: "task", limit: 0)

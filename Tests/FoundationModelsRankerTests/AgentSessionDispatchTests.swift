@@ -25,13 +25,6 @@ struct AgentSessionDispatchTests {
         .init(id: PathMarkingAgentSession.plainPathID, block: "answered by the plain-text default"),
     ])
 
-    /// Scripted full-catalog ranking for `Self.catalog`.
-    static func rankEntireCatalog(intent: String) async -> [SelectionMatch] {
-        catalog.ids.map { id in
-            SelectionMatch(id: id, block: catalog.block(forID: id) ?? "", score: 0.5, signals: nil)
-        }
-    }
-
     // MARK: - Dispatch through the existential
 
     @Test
@@ -49,8 +42,7 @@ struct AgentSessionDispatchTests {
         let tier = SelectionTier(
             catalog: Self.catalog,
             config: config,
-            onDiagnostic: { _ in },
-            retrievalRanking: Self.rankEntireCatalog
+            onDiagnostic: { _ in }
         )
 
         let matches = try await tier.search(intent: "any intent", limit: 5)

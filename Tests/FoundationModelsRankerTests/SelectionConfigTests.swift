@@ -9,11 +9,10 @@ struct SelectionConfigTests {
     // MARK: - Defaults
 
     @Test
-    func defaultCapacityAndCandidateLimitsMatchTheNamedConstants() {
+    func defaultCapacityLimitMatchesTheNamedConstant() {
         let config = SelectionConfig(model: { _ in ScriptedAgentSession() })
 
         #expect(config.capacityCharacterLimit == SelectionConfig.defaultCapacityCharacterLimit)
-        #expect(config.candidateLimit == SelectionConfig.defaultCandidateLimit)
     }
 
     @Test
@@ -33,22 +32,10 @@ struct SelectionConfigTests {
     }
 
     @Test
-    func negativeCandidateLimitClampsToZero() {
-        let config = SelectionConfig(model: { _ in ScriptedAgentSession() }, candidateLimit: -5)
-
-        #expect(config.candidateLimit == 0)
-    }
-
-    @Test
-    func positiveLimitsPassThroughUnclamped() {
-        let config = SelectionConfig(
-            model: { _ in ScriptedAgentSession() },
-            capacityCharacterLimit: 1_234,
-            candidateLimit: 7
-        )
+    func positiveCapacityLimitPassesThroughUnclamped() {
+        let config = SelectionConfig(model: { _ in ScriptedAgentSession() }, capacityCharacterLimit: 1_234)
 
         #expect(config.capacityCharacterLimit == 1_234)
-        #expect(config.candidateLimit == 7)
     }
 
     // MARK: - Session source
@@ -78,15 +65,10 @@ struct SelectionConfigTests {
     }
 
     @Test
-    func theSessionInitializerClampsNegativeLimitsToZero() {
-        let config = SelectionConfig(
-            session: ScriptedAgentSession(),
-            capacityCharacterLimit: -1,
-            candidateLimit: -5
-        )
+    func theSessionInitializerClampsANegativeCapacityLimitToZero() {
+        let config = SelectionConfig(session: ScriptedAgentSession(), capacityCharacterLimit: -1)
 
         #expect(config.capacityCharacterLimit == 0)
-        #expect(config.candidateLimit == 0)
     }
 
     // MARK: - `.selectionDefault` neutral wording

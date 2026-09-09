@@ -22,7 +22,7 @@
 //     never-mutated-after-init use, which has no concurrency problem to
 //     solve and would gain nothing from `await` on every access.
 //   - `RetrievalEngine` is `Searcher`-specific and stays that way: its
-//     `weights`/`preamble`/`candidateLimit`/selection-tier wiring are
+//     `weights`/`preamble`/selection-tier wiring are
 //     concerns this actor's mutable-streaming-corpus scope never asked
 //     for, and it's `private` to Searcher.swift besides. This actor owns
 //     its own, narrower `embedder`/`onDiagnostic` pair directly (below)

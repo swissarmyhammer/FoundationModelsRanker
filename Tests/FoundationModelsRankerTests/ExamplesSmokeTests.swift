@@ -134,10 +134,11 @@ struct ExamplesSmokeTests {
         #expect(results.count == demoQueries.count)
         for result in results {
             #expect(result.matches.map(\.id) == ["grep"])
-            // Under-budget selection ranks the whole catalog per query, so
-            // even a scripted pick carries a real per-signal breakdown --
-            // never the old 1.0/nil pure-selection sentinel.
-            #expect(result.matches.first?.signals != nil)
+            // A selection pick is scored by its order and carries no
+            // retrieval signals: the one prompt picks, and nothing ranks
+            // the catalog after it.
+            #expect(result.matches.first?.score == OrderScores.firstPick)
+            #expect(result.matches.first?.signals == nil)
         }
     }
 

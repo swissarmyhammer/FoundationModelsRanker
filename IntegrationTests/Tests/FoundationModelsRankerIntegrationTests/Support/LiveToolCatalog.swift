@@ -29,13 +29,6 @@ struct LiveToolCatalog: SelectionCatalog {
     /// Each entry's description, keyed by id.
     private let descriptions: [String: String]
 
-    /// The score `everyEntryRanked()` gives each entry.
-    ///
-    /// A live-model test reads which id the model chose, never how the
-    /// retrieval signals ordered the catalog, so one score for every entry
-    /// says all the ordering has to say.
-    private static let uniformScore = 0.5
-
     /// Creates a catalog of `entries`, keeping their order as `ids`.
     ///
     /// - Parameter entries: this catalog's entries, in candidate order.
@@ -51,19 +44,5 @@ struct LiveToolCatalog: SelectionCatalog {
 
     func block(forID id: String) -> String? {
         descriptions[id]
-    }
-
-    /// Ranks every entry, which keeps the whole catalog selectable.
-    ///
-    /// `SelectionTier` takes this as its `retrievalRanking`, and it resolves
-    /// each id the model chose through the result. An entry left out here is
-    /// an entry the tier cannot resolve.
-    ///
-    /// - Returns: one `SelectionMatch` per entry, in catalog order.
-    func everyEntryRanked() -> [SelectionMatch] {
-        ids.compactMap { id in
-            guard let description = descriptions[id] else { return nil }
-            return SelectionMatch(id: id, block: description, score: Self.uniformScore, signals: nil)
-        }
     }
 }

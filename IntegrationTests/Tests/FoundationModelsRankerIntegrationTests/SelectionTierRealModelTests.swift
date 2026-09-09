@@ -50,8 +50,7 @@ struct SelectionTierRealModelTests {
             // failure names the diagnostic itself.
             onDiagnostic: { diagnostic in
                 Issue.record("The selection tier reported \(diagnostic).")
-            },
-            retrievalRanking: { _ in catalog.everyEntryRanked() }
+            }
         )
 
         let matches = try await tier.search(intent: "read the contents of a file", limit: catalog.ids.count)
