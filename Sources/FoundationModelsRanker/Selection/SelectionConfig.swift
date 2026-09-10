@@ -4,7 +4,9 @@
 // deliberate diff is the default preamble constant, renamed from
 // `.librarianDefault` to `.selectionDefault` with neutral wording -- no
 // "API librarian"/"functions" domain language, since FoundationModelsRanker's catalog is
-// never assumed to be an API surface.
+// never assumed to be an API surface. Card ^zxm99zs then reworded the
+// default so a small model answers a query that a candidate serves; the
+// constant's doc comment records the measurement.
 //
 // A session factory takes only the instructions text. A caller that wants
 // guided generation applies its own grammar when it makes the session. A
@@ -144,14 +146,43 @@ public struct SelectionConfig: Sendable {
 }
 
 extension String {
-    /// The curated selection guidance every `SelectionConfig` defaults its
-    /// `preamble` to -- a neutral rewrite of Multitool's shipped
-    /// `Librarian.selectionGuidance` ("You are an API librarian ... return
-    /// ONLY the functions needed"), generalized to items/ids rather than
-    /// functions so it carries no domain-specific language (plan.md §6
-    /// phase 3): "fewest that suffice, in call order when order matters."
+    /// The selection guidance every `SelectionConfig` defaults its
+    /// `preamble` to.
+    ///
+    /// The text says what the candidates are, what an answer is, and when
+    /// an empty answer is right. It speaks of items and ids, never of
+    /// functions, because a catalog is never assumed to be an API surface
+    /// (plan.md §6 phase 3). It keeps the rule every earlier default carried:
+    /// "fewest that suffice, in call order when order matters."
+    ///
+    /// **The text decides whether a small model answers at all, and it was
+    /// measured** (card `^zxm99zs`). The default that shipped before it read
+    /// "Given a task, return ONLY the items needed — fewest that suffice, in
+    /// call order when order matters. Do not invent ids; return an empty list
+    /// if nothing fits." Driven over a nine-function catalog (files read,
+    /// write, edit, patch, glob, grep; shell execute, getLines, grepHistory)
+    /// with the ten queries a consumer's agent asked, three rounds each:
+    ///
+    /// - `mlx-community/Qwen3-4B-4bit`, over the consumer's own catalog and
+    ///   grammar, answered 0 of 30 with the earlier default and 30 of 30 with
+    ///   this text. The consumer's own wording, which names the candidates as
+    ///   functions, answered 30 of 30 as well.
+    /// - The on-device system model, one cold session for each query,
+    ///   answered 27 of 30 with the earlier default ("file operations:
+    ///   create, write, append, delete, move" answered 0 of 3) and 30 of 30
+    ///   with this text. One cached root session for all ten queries
+    ///   answered 30 of 30 with both.
+    /// - `FullMonty`'s four demo queries answered 12 of 12 on both models with
+    ///   every wording.
+    ///
+    /// The grammar, the prompt, and the candidate blocks were the same in
+    /// every run. The sentence that decides the empty case is the last one:
+    /// a model told only to "return an empty list if nothing fits" returns
+    /// it for a query that a candidate serves.
     public static let selectionDefault: String = """
-        Given a task, return ONLY the items needed — fewest that suffice, in call order when
-        order matters. Do not invent ids; return an empty list if nothing fits.
+        The candidates below are the items available to do a task, each under its id. Given a task, \
+        answer with the ids of the candidates that do it — the fewest that suffice, in call order when \
+        order matters. Use only the ids shown. Prefer the closest candidates over an empty answer; \
+        answer with an empty list only when no candidate is related to the task at all.
         """
 }

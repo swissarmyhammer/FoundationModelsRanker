@@ -320,12 +320,22 @@ per-id item/block lookup, and summary rendering — so the generalization is:
   `# Candidates` + one entry for each candidate, assembled in
   `SelectionTier.assemblePrefix`; each entry is the candidate id as a
   `## <id>` markdown heading above that candidate's summary block).
-  FoundationModelsRanker ships the default — `String.selectionDefault`, the
-  proven librarian guidance with neutral wording ("return ONLY the items
-  needed — fewest that suffice, in call order when order matters; do not
-  invent ids; return an empty list if nothing fits"). Consumers pass their
-  own domain-flavored guidance via the `preamble:` parameter, keeping their
-  model-visible prompts under their own control.
+  FoundationModelsRanker ships the default — `String.selectionDefault`, a
+  neutral wording that says what the candidates are ("the items available to
+  do a task, each under its id"), what an answer is ("the ids of the
+  candidates that do it — the fewest that suffice, in call order when order
+  matters"), and when an empty answer is right ("only when no candidate is
+  related to the task at all"). Consumers pass their own domain-flavored
+  guidance via the `preamble:` parameter, keeping their model-visible
+  prompts under their own control.
+
+  *Amended 2026-09-10 (task `^zxm99zs`).* The default first read "return
+  ONLY the items needed — fewest that suffice, in call order when order
+  matters; do not invent ids; return an empty list if nothing fits". Over a
+  nine-function catalog and ten consumer queries, `mlx-community/Qwen3-4B-4bit`
+  answered 0 of 30 with that text and 30 of 30 with the text above; the
+  on-device system model, cold, answered 27 of 30 and then 30 of 30. The
+  doc comment of `String.selectionDefault` records the whole measurement.
 
   *Amended 2026-08-29 (task `^3t4nhk7`).* This bullet first read: "the full
   prefix is preamble + `# Candidates` + each candidate's summary block,

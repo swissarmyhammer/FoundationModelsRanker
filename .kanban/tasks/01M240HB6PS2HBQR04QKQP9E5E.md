@@ -97,8 +97,24 @@ comments:
     - result: Build complete. No errors. No warnings.
     - next: The task is ready for review.
   timestamp: 2026-09-10T06:15:27.674466+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m24zcpt4seph8cstxw7347m1
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 6cee934). 0 findings. 1 file reviewed. 2 files in `.kanban/` not reviewed because of `.reviewignore`. The two items in the section "Review Findings (2026-09-09 17:20)" are checked.
+    - next: none. The task is in `done`.
+  timestamp: 2026-09-10T06:16:58.948751+00:00
+- actor: claude-code
+  id: 01m24zdgfdw1btfm23hp2h91jw
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 1 file, Tests/FoundationModelsRankerTests/Support/OrderScores.swift
+    - test: green — swift test, 282 passed, 0 failed, 0 warnings; IntegrationTests build complete
+    - commit: 6cee934
+    - review: clean — 0 findings, task moved to done
+  timestamp: 2026-09-10T06:17:25.229068+00:00
+position_column: done
+position_ordinal: a780
 title: 'SelectionTier: one prompt that picks. Remove the retrieval ranking after the answer and the retrieval cut before it'
 ---
 ## What

@@ -439,8 +439,8 @@ public actor SelectionTier {
     /// heading, with the id's `summaryBlock(forID:)` on the line below.
     ///
     /// The heading is what makes the id visible to the model. The preamble
-    /// tells the model "Do not invent ids", so the prefix must show which
-    /// ids exist; a prefix of bare summaries makes the model answer with a
+    /// tells the model "Use only the ids shown", so the prefix must show
+    /// which ids exist; a prefix of bare summaries makes the model answer with a
     /// summary, which then resolves to nothing and reports
     /// `.unknownSelectedId`. Both `assemblePrefix` overloads and
     /// `candidateRuns` render through this one function, so the paths

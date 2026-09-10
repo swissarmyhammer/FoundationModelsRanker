@@ -1,6 +1,14 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m24zeak68v5tne9nzq38nvvy
+  text: |-
+    ### finish — skipped
+    - reason: the work is in the FoundationModelsMetadataRegistry repository. The finish loop for this package works only in the current tree.
+    - next: run /finish on this card from a checkout of FoundationModelsMetadataRegistry, or move the card to that repository's board.
+  timestamp: 2026-09-10T06:17:51.974901+00:00
 position_column: todo
 position_ordinal: '8180'
 title: 'FoundationModelsMetadataRegistry: move MetadataSearcher to SelectionTier.init(catalog:config:onDiagnostic:) and drop candidateLimit from its tests'
