@@ -55,6 +55,48 @@ comments:
     - evidence: `swift package reset && swift test` at /Users/wballard/github/swissarmyhammer/FoundationModelsRanker — 282 tests passed, 0 failed, 0 skipped, 0 warnings. `swift build --package-path IntegrationTests --build-tests` — build complete, 0 warnings, 0 errors.
     - next: no action needed. The build is clean.
   timestamp: 2026-09-09T22:18:35.102284+00:00
+- actor: claude-code
+  id: 01m24z09tbwhhxbh539wehkck3
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` (commit aac493a), 2 findings, 2 confirmed, 0 refuted — Tests/FoundationModelsRankerTests/Support/OrderScores.swift:12, Tests/FoundationModelsRankerTests/Support/OrderScores.swift:15 (`code-hygiene/magic-numbers-swift`)
+    - next: replace each magic number in OrderScores.swift with a named constant. Check each item in the `## Review Findings (2026-09-09 17:20)` section. Then run the review again.
+  timestamp: 2026-09-10T06:10:12.427275+00:00
+- actor: claude-code
+  id: 01m24z16tt006k7z64zzgh3k7c
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 19 files
+    - test: green — swift test, 282 passed, 0 failed, 0 warnings; IntegrationTests build complete
+    - commit: aac493a
+    - review: findings — Tests/FoundationModelsRankerTests/Support/OrderScores.swift:12, Tests/FoundationModelsRankerTests/Support/OrderScores.swift:15
+  timestamp: 2026-09-10T06:10:42.138136+00:00
+- actor: claude-code
+  id: 01m24z7jsxd6fk2j4dykmstqq9
+  text: |-
+    ### implement — changed
+
+    Findings worked: the two `code-hygiene/magic-numbers-swift` items in `## Review Findings (2026-09-09 17:20)`.
+
+    Cause: the rule runs swiftlint `no_magic_numbers` with `allowed_numbers: [0, 1, -1, 100]`. In `Tests/FoundationModelsRankerTests/Support/OrderScores.swift` the divisors `2.0` and `3.0` stood inside a division (`1.0 / 2.0`, `1.0 / 3.0`). A literal that is an operand of an operation is reported. A `static let` with a direct value is not reported, and `1.0` is in the allow-list.
+
+    Fix: the file now names each rank as a private `static let` (`secondRank = 2.0`, `thirdRank = 3.0`) and derives each score from the named rank (`1.0 / secondRank`, `1.0 / thirdRank`). `firstPick = 1.0` is not changed. No unnamed number stands in a division in the file. The expected values stay independent of `SelectionTier.orderScore(rank:)`, so the tests do not compare production code with itself.
+
+    Check before the change: swiftlint with the rule's own child config over the file reported 2 findings at lines 12 and 15 (RED). After the change the same run reported 0 findings (GREEN). The five test files that read `OrderScores.firstPick`, `secondPick`, and `thirdPick` are not changed.
+
+    - evidence: `swift build --build-tests` — Build complete, exit 0, 0 warnings. `swift test` — 282 tests in 22 suites passed, 0 failed, 0 warnings, exit 0. 1 file changed: Tests/FoundationModelsRankerTests/Support/OrderScores.swift.
+    - next: `/review`.
+  timestamp: 2026-09-10T06:14:11.005429+00:00
+- actor: claude-code
+  id: 01m24z9xntw8py9rh128ztybx8
+  text: |-
+    ### test — green
+    - command: `swift test` at /Users/wballard/github/swissarmyhammer/FoundationModelsRanker
+    - result: 282 tests in 22 suites. All tests pass. 0 fails. No warnings in the build output.
+    - command: `swift build --package-path IntegrationTests --build-tests`
+    - result: Build complete. No errors. No warnings.
+    - next: The task is ready for review.
+  timestamp: 2026-09-10T06:15:27.674466+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'SelectionTier: one prompt that picks. Remove the retrieval ranking after the answer and the retrieval cut before it'
@@ -96,3 +138,17 @@ So the path is: retrieve (over budget), then prompt, then rank. The user of the 
 
 - [x] A unit test with a recording `AgentSession` and a catalog under budget asserts exactly one `respond` call and no embedder call.
 - [x] A unit test over budget asserts the chosen design (every id reaches a prompt).
+
+## Review Findings (2026-09-09 17:20)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 17 file(s) reviewed, 8 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+> 2 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+> - `plan.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsRankerTests/Support/OrderScores.swift:12` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.
+- [x] `Tests/FoundationModelsRankerTests/Support/OrderScores.swift:15` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.
