@@ -9,6 +9,13 @@ comments:
     - reason: the work is in the FoundationModelsMetadataRegistry repository. The finish loop for this package works only in the current tree.
     - next: run /finish on this card from a checkout of FoundationModelsMetadataRegistry, or move the card to that repository's board.
   timestamp: 2026-09-10T06:17:51.974901+00:00
+- actor: claude-code
+  id: 01m251bdjhh810zgrg9awwmg67
+  text: |-
+    ### moved
+    - A copy of this card is on the FoundationModelsMetadataRegistry board as ^5z7hmrz.
+    - Do the work there. This card stays only as a record for the ranker side.
+  timestamp: 2026-09-10T06:51:13.873901+00:00
 position_column: todo
 position_ordinal: '8180'
 title: 'FoundationModelsMetadataRegistry: move MetadataSearcher to SelectionTier.init(catalog:config:onDiagnostic:) and drop candidateLimit from its tests'
