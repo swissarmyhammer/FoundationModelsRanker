@@ -31,8 +31,25 @@ comments:
     - evidence: swift test — 283 passed, 0 failed, 0 skipped, 0 warnings
     - next: commit a local checkpoint, then review HEAD~1..HEAD
   timestamp: 2026-09-14T14:49:37.145153+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m2g6gmrtx6612q6v9k4p3sth
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 33e89d6). 0 findings, 0 confirmed, 0 refuted. 7 validator runs attempted, 0 failed. 2 files reviewed (SelectionTier.swift, SelectionTests.swift). 2 .kanban files not reviewed because of .reviewignore.
+    - The diff does both subtasks: the `guard !catalog.ids.isEmpty` in `SelectionTier.search`, and the test `emptyCatalogSearchSendsNoPromptToTheSession`. Both boxes are checked.
+    - next: none. The task moves to done.
+  timestamp: 2026-09-14T14:53:06.714867+00:00
+- actor: claude-code
+  id: 01m2g6h5z3vrnjvb4qtqdxxdqp
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 2 files (SelectionTier.swift, SelectionTests.swift)
+    - test: green — swift test, 283 passed, 0 failed, 0 skipped, 0 warnings
+    - commit: 33e89d6
+    - review: clean — 0 findings
+  timestamp: 2026-09-14T14:53:24.323863+00:00
+position_column: done
+position_ordinal: a980
 title: Add an empty-catalog guard to SelectionTier.search
 ---
 Request from the FoundationModelsSkills session (their task ^w8cg4t6).
@@ -43,8 +60,8 @@ Request from the FoundationModelsSkills session (their task ^w8cg4t6).
 FoundationModelsSkills now has its own guard (commit 027a1d2), but other callers of `MetadataSearcher` in `.auto` or `.selection` mode still reach the tier with an empty catalog.
 
 ## The work
-- [ ] Beside `guard limit > 0` in `SelectionTier.search`, add a guard for an empty catalog. Return an empty result, and do not call the session.
-- [ ] Add a unit test with a session double: a tier over zero items gives an empty result, and the double gets zero calls.
+- [x] Beside `guard limit > 0` in `SelectionTier.search`, add a guard for an empty catalog. Return an empty result, and do not call the session.
+- [x] Add a unit test with a session double: a tier over zero items gives an empty result, and the double gets zero calls.
 
 ## When it is complete
 - A selection tier over zero items sends no prompt and does not throw.
