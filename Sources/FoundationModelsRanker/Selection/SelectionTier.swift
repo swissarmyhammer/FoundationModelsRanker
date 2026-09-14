@@ -172,11 +172,15 @@ public actor SelectionTier {
     ///     yields an empty result without forking or creating a session.
     /// - Returns: the selected ids' verbatim `SelectionMatch`es, in the
     ///   model's order, each scored by its position (`1 / rank`) and
-    ///   carrying no `signals`, at most `limit`.
+    ///   carrying no `signals`, at most `limit`. A catalog with no ids
+    ///   yields an empty result without forking or creating a session: it
+    ///   has no id to select, and a model that gets a prompt with no
+    ///   candidates answers with text that does not decode.
     /// - Throws: whatever the underlying session's
     ///   `fork()`/`respond(to:generating:)` throws.
     public func search(intent: String, limit: Int) async throws -> [SelectionMatch] {
         guard limit > 0 else { return [] }
+        guard !catalog.ids.isEmpty else { return [] }
         guard assembledPrefix.count <= config.capacityCharacterLimit else {
             return matches(forIDs: try await selectFromEveryRun(intent: intent), limit: limit)
         }

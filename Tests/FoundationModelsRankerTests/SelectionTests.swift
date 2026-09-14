@@ -349,6 +349,27 @@ struct SelectionTests {
         #expect(matches.isEmpty)
     }
 
+    @Test
+    func emptyCatalogSearchSendsNoPromptToTheSession() async throws {
+        // A catalog of zero items has no id to select. A prompt over it is
+        // the preamble and an empty `# Candidates` part, and a real model
+        // answers that prompt with prose that does not decode. Thus the tier
+        // must not call the session at all.
+        let session = ScriptedAgentSession([#"{"ids":[]}"#])
+        let config = SelectionConfig(session: session)
+        let tier = SelectionTier(
+            catalog: FixtureSelectionCatalog([]),
+            config: config,
+            onDiagnostic: { _ in }
+        )
+
+        let matches = try await tier.search(intent: "anything", limit: 5)
+
+        #expect(matches.isEmpty)
+        #expect(session.forkCount == 0)
+        #expect(session.callCount == 0)
+    }
+
     // MARK: - Unknown id filtering + diagnostic
 
     @Test
