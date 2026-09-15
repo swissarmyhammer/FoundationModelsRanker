@@ -1,4 +1,4 @@
-// New to FoundationModelsRanker (plan.md §6 phase 3) -- generalizes the two selection-tier
+// New to FoundationModelsRanker -- generalizes the two selection-tier
 // cases of FoundationModelsMetadataRegistry's own
 // `Sources/FoundationModelsMetadataRegistry/Catalog/Diagnostics.swift`
 // (`MetadataDiagnostic`) into a neutral channel with no default logger:
@@ -6,8 +6,8 @@
 // their own diagnostics or logging rather than FoundationModelsRanker logging on their
 // behalf.
 //
-// `.embeddingUnavailable` is added by the `Searcher` facade task (plan.md
-// §3a): the retrieval-tier counterpart to `MetadataDiagnostic
+// `.embeddingUnavailable` is added by the `Searcher` facade task: the
+// retrieval-tier counterpart to `MetadataDiagnostic
 // .embeddingUnavailable`, reported whenever `Searcher` degrades the cosine
 // signal to keyword-only.
 //

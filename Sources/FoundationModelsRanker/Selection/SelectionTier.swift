@@ -1,6 +1,6 @@
 // Ported from FoundationModelsMetadataRegistry's
-// `Sources/FoundationModelsMetadataRegistry/Selection/SelectionTier.swift`
-// (plan.md §6 phase 3), generalized over `any SelectionCatalog` instead of
+// `Sources/FoundationModelsMetadataRegistry/Selection/SelectionTier.swift`,
+// generalized over `any SelectionCatalog` instead of
 // `MetadataIndex<Item>`: `index.ids`/`item(forID:)`/`block(forID:)`/
 // `renderSummaryBlock()` map onto `catalog.ids`/`summaryBlock(forID:)`/
 // `block(forID:)`; `Match<Item>` becomes `SelectionMatch` (no catalog item to
@@ -15,15 +15,15 @@
 
 import Foundation
 
-/// The selection tier's dynamic session over a `SelectionCatalog` (plan.md
-/// §6): generalizes FoundationModelsMetadataRegistry's own `SelectionTier`,
+/// The selection tier's dynamic session over a `SelectionCatalog`:
+/// generalizes FoundationModelsMetadataRegistry's own `SelectionTier`,
 /// which itself generalized Multitool's shipped `Librarian`
 /// (`../FoundationModelsMultitool/Sources/.../Librarian.swift`), over any
 /// narrow `SelectionCatalog` conformer instead of a bespoke index type.
 ///
 /// Assembles a prefix from `SelectionConfig.preamble`, a `# Candidates`
 /// header, and every catalog id rendered as a markdown heading above that
-/// id's **`summaryBlock(forID:)`** (plan.md §4: the summary seeds the
+/// id's **`summaryBlock(forID:)`** (the summary seeds the
 /// selection prefix; the full `block(forID:)` is the result payload) once
 /// at `init`, since the catalog never changes for this tier's lifetime — a
 /// reload replaces the whole tier rather than mutating one in place.
@@ -54,7 +54,7 @@ import Foundation
 /// same heading instead (`prompt(prefix:intent:)`). Either way the model sees
 /// the same prefix, and reads the intent as a task to select for.
 ///
-/// **IDs only** (plan.md §6, decision #4): the guided output is
+/// **IDs only**: the guided output is
 /// `Selection { ids: [String] }`. The assembled prefix shows every candidate
 /// id as a markdown heading, so the model can read the ids it may return.
 /// This tier applies no grammar of its own: a caller that wants guided
@@ -353,7 +353,7 @@ public actor SelectionTier {
     // MARK: - Verbatim lookup and order scores
 
     /// Maps model-selected `ids` back through the catalog to verbatim
-    /// `SelectionMatch`es (plan.md §6 "Verbatim lookup"), filtering any id
+    /// `SelectionMatch`es, filtering any id
     /// the catalog does not hold and reporting it via `.unknownSelectedId`
     /// — the backstop against a model that answers with text that is not an
     /// id — deduplicating repeats (first occurrence wins, which keeps the
@@ -406,12 +406,12 @@ public actor SelectionTier {
 
     // MARK: - Prefix assembly
 
-    /// Assembles this tier's instruction prefix (plan.md §6): `preamble`
+    /// Assembles this tier's instruction prefix: `preamble`
     /// followed by a `# Candidates` header and one entry per catalog id, in
     /// catalog order. Each entry is the id as a markdown heading above the
     /// id's **`summaryBlock(forID:)`** — never `block(forID:)`, which stays
     /// reserved for the verbatim `SelectionMatch.block` a selected id looks
-    /// up afterward (plan.md §4).
+    /// up afterward.
     ///
     /// - Parameters:
     ///   - preamble: the selection guidance to prepend.
@@ -422,7 +422,7 @@ public actor SelectionTier {
     }
 
     /// Assembles an instruction prefix for an arbitrary candidate id
-    /// set (plan.md §6): `preamble` followed by a `# Candidates` header and
+    /// set: `preamble` followed by a `# Candidates` header and
     /// one `candidateEntry(forID:catalog:)` per id, in `ids`' order —
     /// `assemblePrefix(preamble:catalog:)`'s whole-catalog case is
     /// `ids: catalog.ids`; the over-budget path passes one run of ids
@@ -462,7 +462,7 @@ public actor SelectionTier {
     // MARK: - Guided-generation JSON Schema
 
     /// Makes the JSON Schema source text that limits `Selection.ids` to
-    /// exactly `ids` (plan.md §6 "IDs only, grammar-enforced"). This is the
+    /// exactly `ids`. This is the
     /// same derived schema as Multitool's own
     /// `Librarian.grammarSchemaSource()`.
     ///

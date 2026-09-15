@@ -1,4 +1,4 @@
-// New to FoundationModelsRanker (plan.md §6 phase 3) -- generalizes
+// New to FoundationModelsRanker -- generalizes
 // FoundationModelsMetadataRegistry's own
 // `Sources/FoundationModelsMetadataRegistry/Catalog/Match.swift`
 // (`Match<Item>`) by dropping the generic catalog item: a `SelectionTier`
@@ -8,7 +8,7 @@
 // Consumers wrap `SelectionMatch` into their own richer result types when
 // they need the original item back.
 
-/// One retrieval or selection result over a `SelectionCatalog` (plan.md §6):
+/// One retrieval or selection result over a `SelectionCatalog`:
 /// the catalog's own id and verbatim block, plus a score in `[0, 1]` and,
 /// for a retrieval result, the raw per-signal scores that produced it.
 public struct SelectionMatch: Sendable, Equatable {
@@ -17,7 +17,7 @@ public struct SelectionMatch: Sendable, Equatable {
 
     /// The matched id's block, **verbatim from the catalog** --
     /// `SelectionCatalog.block(forID:)`'s output, never re-derived and never
-    /// model output (plan.md §1 "Verbatim by construction, not by prompt").
+    /// model output. The code, not the prompt, keeps the block verbatim.
     public let block: String
 
     /// A score in `[0, 1]`, whose meaning follows the tier that made the

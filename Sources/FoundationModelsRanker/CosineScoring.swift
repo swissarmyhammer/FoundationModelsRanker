@@ -1,10 +1,10 @@
 // Ported from CodeContextKit's `Sources/CodeContextKit/Search/SearchCorpus.swift`
 // (`SearchCorpusSnapshot.matvecCosineScores`/`multiplyMatrixByVector`) and
 // FoundationModelsMetadataRegistry's `Sources/FoundationModelsMetadataRegistry/
-// MetadataSearcher.swift` (`MetadataSearcher.cosineSimilarity`) — plan.md §1
-// "Genuinely different (stays put)": the two repos' cosine-scoring
-// strategies are kept side by side here rather than unified, so either
-// consumer can adopt whichever fits its corpus representation (§6 phase 2).
+// MetadataSearcher.swift` (`MetadataSearcher.cosineSimilarity`). The two
+// repos' cosine-scoring strategies are really different. This file keeps
+// them side by side rather than unified, so either
+// consumer can adopt whichever fits its corpus representation.
 // No behavior changes.
 
 import Accelerate

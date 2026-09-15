@@ -1,7 +1,7 @@
 // Ported from CodeContextKit's
 // `Sources/CodeContextKit/Embedding/TextEmbedding.swift`. Lineage: Rust
-// `swissarmyhammer-search` crate -> CodeContextKit -> FoundationModelsRanker (plan.md §3,
-// §4.2). No behavior changes; the signature is byte-identical to both
+// `swissarmyhammer-search` crate -> CodeContextKit -> FoundationModelsRanker.
+// No behavior changes; the signature is byte-identical to both
 // existing copies.
 
 /// A seam for converting text into fixed-length embedding vectors.

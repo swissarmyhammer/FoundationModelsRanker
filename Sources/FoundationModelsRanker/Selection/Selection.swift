@@ -1,6 +1,6 @@
 // Ported from FoundationModelsMetadataRegistry's
-// `Sources/FoundationModelsMetadataRegistry/Selection/Selection.swift`
-// (plan.md §6 phase 3). No behavior or shape changes -- the same
+// `Sources/FoundationModelsMetadataRegistry/Selection/Selection.swift`.
+// No behavior or shape changes -- the same
 // `@Generable`, ids-only output. Doc comment updated to reference
 // `SelectionConfig.selectionDefault` (this package's neutral rename of
 // `.librarianDefault`) and to drop the FoundationModelsMetadataRegistry-

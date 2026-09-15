@@ -1,6 +1,6 @@
 // Ported from FoundationModelsMetadataRegistry's
-// `Sources/FoundationModelsMetadataRegistry/Selection/SelectionConfig.swift`
-// (plan.md §6 phase 3). Behavior unchanged (defaults, clamping); the one
+// `Sources/FoundationModelsMetadataRegistry/Selection/SelectionConfig.swift`.
+// Behavior unchanged (defaults, clamping); the one
 // deliberate diff is the default preamble constant, renamed from
 // `.librarianDefault` to `.selectionDefault` with neutral wording -- no
 // "API librarian"/"functions" domain language, since FoundationModelsRanker's catalog is
@@ -151,8 +151,8 @@ extension String {
     ///
     /// The text says what the candidates are, what an answer is, and when
     /// an empty answer is right. It speaks of items and ids, never of
-    /// functions, because a catalog is never assumed to be an API surface
-    /// (plan.md §6 phase 3). It keeps the rule every earlier default carried:
+    /// functions, because a catalog is never assumed to be an API surface.
+    /// It keeps the rule every earlier default carried:
     /// "fewest that suffice, in call order when order matters."
     ///
     /// **The text decides whether a small model answers at all, and it was

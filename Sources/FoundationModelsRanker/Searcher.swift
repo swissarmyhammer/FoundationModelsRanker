@@ -1,4 +1,4 @@
-// New to FoundationModelsRanker (plan.md §3a, §6 phase 3) -- the package's one-call facade:
+// New to FoundationModelsRanker -- the package's one-call facade:
 // composes the phase-2 `HybridRanker` (retrieval: BM25 + trigram + optional
 // cosine, fused by RRF) with the phase-3 `SelectionTier` (agent final
 // selection) over an in-memory `SelectionCatalog` built from the caller's
@@ -13,20 +13,20 @@
 // hot-reloadable) to a plain value type (`Searcher`'s catalog is fixed for
 // its lifetime -- no hot reload in this facade).
 //
-// SDK finding (plan.md §7 risk, carried from the `LanguageModelSession:
+// SDK finding (carried from the `LanguageModelSession:
 // AgentSession` conformance task, ^2gk4k4r, and documented at length in
 // `Selection/LanguageModelSessionSupport.swift`): the installed Xcode-beta
 // macOS 27 SDK's `FoundationModels.swiftinterface` exposes only
-// `SystemLanguageModel.default`, not `.fast` as plan.md §3a's "shipped
-// default" guidance describes ("the on-device system model's `.fast`
-// variant -- guidance, not a requirement"). This facade's zero-config
+// `SystemLanguageModel.default`, not `.fast`. The preferred shipped default
+// is the `.fast` variant of the on-device system model, but that is
+// guidance, not a requirement. This facade's zero-config
 // default session factory therefore uses `.default` in `.fast`'s place;
 // nothing here assumes `.fast` exists, so a future SDK shipping it needs no
 // changes beyond swapping this one constant.
 
 import FoundationModels
 
-/// The package's front door (plan.md §3a): "a list of things to search, then
+/// The package's front door: "a list of things to search, then
 /// a query" is the whole API.
 ///
 /// Composes `HybridRanker` (BM25 + trigram + optional cosine, fused by RRF)
@@ -57,7 +57,7 @@ import FoundationModels
 /// into an isolated child, and many calls make the context grow. Use the
 /// factory front door when each call must get a fresh context.
 ///
-/// Degradation is graceful, never silent (plan.md §3a): no `embedder` (or
+/// Degradation is graceful, never silent: no `embedder` (or
 /// a query embed that itself fails) drops straight to keyword-only
 /// retrieval with `.embeddingUnavailable` reported via `onDiagnostic` on
 /// every such search. A `weights.cosine` of `0.0` is different -- a
@@ -71,7 +71,7 @@ import FoundationModels
 /// configured, retrieval otherwise -- mirroring FMR's own `.auto`
 /// semantics.
 public struct Searcher: Sendable {
-    /// Which tier `search(_:limit:)` answers a query with (plan.md §3a).
+    /// Which tier `search(_:limit:)` answers a query with.
     public enum Mode: Sendable {
         /// `HybridRanker`'s fused BM25 + trigram + (optional cosine)
         /// ranking only -- no session, no tokens.

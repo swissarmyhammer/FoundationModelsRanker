@@ -1,11 +1,11 @@
 // Ported from CodeContextKit's `Sources/CodeContextKit/Search/Tokenizer.swift`.
 // Lineage: Rust `swissarmyhammer-search` crate's `tokenize.rs` ->
-// CodeContextKit -> FoundationModelsRanker (plan.md §3). No behavior changes.
+// CodeContextKit -> FoundationModelsRanker. No behavior changes.
 
 /// Code-aware tokenization: identifier splitting and character trigrams.
 ///
 /// Pure functions with no DB or embedding access, feeding the BM25 and
-/// trigram-Dice scoring stages (see plan.md "Search"). There is
+/// trigram-Dice scoring stages. There is
 /// deliberately no stemming: fuzziness is carried by the character-trigram
 /// signal, not by stemming. Ported from the Rust crate's `tokenize.rs`.
 public enum Tokenizer {

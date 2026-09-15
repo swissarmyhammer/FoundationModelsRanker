@@ -1,9 +1,9 @@
 // Extracted from CodeContextKit's `Sources/CodeContextKit/Search/SearchCorpus.swift`
 // (`SearchCorpus.preprocessRow`) and FoundationModelsMetadataRegistry's
 // `Sources/FoundationModelsMetadataRegistry/Catalog/MetadataIndex.swift` build
-// step — the two repos' structurally-duplicated per-document precompute
-// (plan.md §1, §6 phase 2). Field names follow FoundationModelsRanker's domain-neutral
-// "primary"/"body" convention (plan.md §4.1) rather than either source's
+// step — the two repos' structurally-duplicated per-document precompute.
+// Field names follow FoundationModelsRanker's domain-neutral
+// "primary"/"body" convention rather than either source's
 // corpus-specific naming (`symbolPath`/`text`, `id`/`block`). No behavior
 // changes.
 

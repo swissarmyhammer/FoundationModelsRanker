@@ -5,9 +5,9 @@
 // FoundationModelsMetadataRegistry/MetadataSearcher.swift` (`Weights`,
 // `retrievalSearch`, `rankEntireCatalog`, `computeSignals`,
 // `fuseAndNormalize`, `sortByNormalizedScore`, `buildMatches`) — the two
-// repos' structurally-duplicated fusion pipeline (plan.md §1, §6 phase 2).
+// repos' structurally-duplicated fusion pipeline.
 // No behavior changes; field names follow FoundationModelsRanker's domain-neutral
-// convention (plan.md §4).
+// convention.
 
 /// Per-signal fusion weights `HybridRanker` gives the BM25, trigram, and
 /// cosine rankings when fusing them via `RRF.fuse(rankedLists:weights:k:)`.
@@ -48,8 +48,8 @@ public struct SignalWeights: Sendable, Equatable {
 
 /// The shared hybrid-search fusion pipeline: BM25 + trigram + (optional)
 /// cosine rankings, fused via `RRF.fuse(rankedLists:weights:k:)` and
-/// normalized to `[0, 1]` via `RRF.normalize(fused:weights:k:)` (plan.md §1,
-/// §6 phase 2). Encodes, once, the pipeline structurally duplicated between
+/// normalized to `[0, 1]` via `RRF.normalize(fused:weights:k:)`.
+/// Encodes, once, the pipeline structurally duplicated between
 /// CodeContextKit's `SearchCode.run` and FoundationModelsMetadataRegistry's
 /// `MetadataSearcher.retrievalSearch`/`rankEntireCatalog`.
 ///

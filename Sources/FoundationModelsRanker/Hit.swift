@@ -1,6 +1,6 @@
 // Ported from CodeContextKit's `Sources/CodeContextKit/Search/Hit.swift`.
 // Lineage: Rust `swissarmyhammer-search` crate's `lib.rs` ->
-// CodeContextKit -> FoundationModelsRanker (plan.md §3). No behavior changes.
+// CodeContextKit -> FoundationModelsRanker. No behavior changes.
 
 /// The per-signal raw scores that contributed to a `Hit`.
 ///

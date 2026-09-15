@@ -1,4 +1,4 @@
-// New to FoundationModelsRanker (plan.md §3a) -- the trivial unit `Searcher` (Searcher.swift)
+// New to FoundationModelsRanker -- the trivial unit `Searcher` (Searcher.swift)
 // answers `search(_:limit:)` calls over: "a list of things to search, then a
 // query" is the whole API, and the things to search need only an id and the
 // text that describes them. No source file to port -- neither CodeContextKit
@@ -7,8 +7,8 @@
 // precedent (an id-keyed conformer rendering its own block/summary), but it
 // requires a richer "render a block" shape FoundationModelsRanker's facade doesn't need.
 
-/// A richer type's seam into `Searcher` without wrapping it in `SearchItem`
-/// (plan.md §3a): an id, the text `Searcher` indexes for retrieval, and a
+/// A richer type's seam into `Searcher` without wrapping it in `SearchItem`:
+/// an id, the text `Searcher` indexes for retrieval, and a
 /// summary that seeds the selection prefix.
 ///
 /// `SearchItem` is the trivial conformer for callers with nothing richer to
@@ -78,7 +78,7 @@ extension Searchable {
     public var group: String? { nil }
 }
 
-/// The trivial `Searchable` conformer (plan.md §3a): an id, the text that
+/// The trivial `Searchable` conformer: an id, the text that
 /// describes it, and an optional summary.
 ///
 /// ```swift

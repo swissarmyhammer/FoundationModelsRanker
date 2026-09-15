@@ -2,8 +2,8 @@
 // `Sources/FoundationModelsMetadataRegistry/Session/AgentSession.swift`
 // (itself lifted as-is from Multitool's own
 // `Sources/FoundationModelsMultitool/Agent/AgentSession.swift`). Lineage:
-// Multitool -> FoundationModelsMetadataRegistry -> FoundationModelsRanker (plan.md §6
-// phase 3). No behavior changes; doc comments generalized to FoundationModelsRanker's own
+// Multitool -> FoundationModelsMetadataRegistry -> FoundationModelsRanker.
+// No behavior changes; doc comments generalized to FoundationModelsRanker's own
 // consumers rather than naming FoundationModelsMetadataRegistry/Multitool
 // specifics.
 

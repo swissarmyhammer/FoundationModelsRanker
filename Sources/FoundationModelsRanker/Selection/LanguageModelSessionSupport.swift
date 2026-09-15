@@ -1,8 +1,8 @@
-// New to FoundationModelsRanker (plan.md §3a, §6 phase 3) -- no source file to port: neither
+// New to FoundationModelsRanker -- no source file to port: neither
 // CodeContextKit nor FoundationModelsMetadataRegistry ever drove
-// `LanguageModelSession` directly through a selection seam (plan.md §1: FMR's
-// own selection tier only ever wrapped an external session type). This is the
-// retroactive conformance §3a promises: any
+// `LanguageModelSession` directly through a selection seam (FMR's
+// own selection tier only ever wrapped an external session type). This is a
+// retroactive conformance: any
 // FoundationModels model -- `.default`, an adapter-loaded model, or a future
 // preset -- plugs into `AgentSession` with no external dependency, so a
 // `LanguageModelSession(model:instructions:)` call type-checks anywhere an
@@ -13,11 +13,11 @@
 // `{ instructions in LanguageModelSession(model: .default, instructions:
 // instructions) }`. Such a factory applies no grammar of its own: it relies
 // on the session's own native guided generation, through
-// `respond(to:generating:)` below. The selection model is never hardcoded
-// (plan.md §2 "neutral naming" / §3a).
+// `respond(to:generating:)` below. The code never hardcodes the selection
+// model: the caller always chooses it.
 //
-// SDK verification (plan.md §7 risk -- "the .fast/.default model spellings
-// ... must be verified against the macOS 27 SDK in phase 3"): the installed
+// SDK verification (the `.fast` and `.default` model names must agree with
+// the macOS 27 SDK): the installed
 // Xcode-beta macOS 27 SDK's `FoundationModels.swiftinterface` exposes only
 // `SystemLanguageModel.default` (plus adapter-based initializers) -- there is
 // no `.fast` static member in this snapshot. Nothing here, or in this file's
@@ -53,8 +53,8 @@ extension LanguageModelSession: AgentSession {
     /// enforces `T`'s schema at the model level via its own constrained
     /// decoding, so routing through that typed API is both more direct and
     /// more robust than parsing free text as JSON after the fact -- the
-    /// plain-`LanguageModelSession` half of plan.md §3a's "grammar
-    /// enforcement follows the session" rule (a session that an external
+    /// plain-`LanguageModelSession` half of the rule that the session sets
+    /// how its output is constrained (a session that an external
     /// grammar constrains gets the id-enum grammar; a plain session uses
     /// this typed output instead).
     ///
@@ -71,8 +71,8 @@ extension LanguageModelSession: AgentSession {
     /// Forks this session for a new call.
     ///
     /// `LanguageModelSession` has no native fork/branch primitive that copies
-    /// a filled KV cache, which is what `AgentSession.fork()` describes
-    /// (plan.md §7 risk), and there is no way to reconstruct an equivalent
+    /// a filled KV cache, which is what `AgentSession.fork()` describes,
+    /// and there is no way to reconstruct an equivalent
     /// fresh session generically from within this conformance. The original
     /// `instructions` text *is* recoverable after construction -- it's the
     /// first `.instructions` entry in `session.transcript` -- but the opaque
@@ -80,8 +80,8 @@ extension LanguageModelSession: AgentSession {
     /// `LanguageModelSession` or `Transcript` hands it back. Recreating "the
     /// same session" therefore needs either capturing extra state this class
     /// offers no hook to attach (the model reference itself), or silently
-    /// substituting a hardcoded model at fork time -- exactly the hardcoding
-    /// plan.md §3a forbids. This conformance therefore keeps `AgentSession`'s
+    /// substituting a hardcoded model at fork time. The caller, not this
+    /// package, chooses the model. This conformance therefore keeps `AgentSession`'s
     /// own default explicitly: `fork()` returns `self`, unchanged.
     ///
     /// Tradeoff: every `fork()` on a plain `LanguageModelSession` shares one

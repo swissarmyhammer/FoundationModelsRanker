@@ -1,5 +1,5 @@
 // The seam generalizing FoundationModelsMetadataRegistry's
-// `MetadataIndex<Item>` for FoundationModelsRanker's selection tier (plan.md §6 phase 3).
+// `MetadataIndex<Item>` for FoundationModelsRanker's selection tier.
 // New to FoundationModelsRanker -- there is no direct source file to port; this protocol
 // captures the three operations `SelectionTier` actually used from
 // `MetadataIndex`: the full candidate id set, each id's rendered summary
