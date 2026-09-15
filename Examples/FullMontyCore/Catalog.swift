@@ -1,12 +1,11 @@
-// `FullMonty`'s fixture catalog (plan.md §3a): ~50 developer command-line
+// `FullMonty`'s fixture catalog: ~50 developer command-line
 // tools, each an id plus a one-line description of what it does — the same
 // "id + text" shape as `Searcher.swift`'s own header-comment example
 // (`grep`/`glob`/`watch`), expanded here into the living proof of that
 // documentation.
 //
 // New to FoundationModelsRanker — no source file to port: neither CodeContextKit nor
-// FoundationModelsMetadataRegistry ships a catalog this shape (plan.md §3a
-// "`Examples/FullMonty` is the living proof"). Modeled structurally on
+// FoundationModelsMetadataRegistry ships a catalog this shape. Modeled structurally on
 // FoundationModelsMetadataRegistry's `Examples/ExamplesSupport`'s
 // `baseGitCommands` fixture, generalized from five git subcommands to a
 // broader command-line surface so the demo has enough breadth to show BM25 +
@@ -73,8 +72,8 @@ public let toolCatalog: [SearchItem] = [
 
 /// Demo queries that overlap with catalog items to show keyword-only retrieval working well.
 ///
-/// The handful of queries `FullMonty` demonstrates the catalog with (plan.md
-/// §3a "a handful of queries"). Each is worded to overlap heavily — in
+/// The handful of queries `FullMonty` demonstrates the catalog with. Each is
+/// worded to overlap heavily — in
 /// wording, not just meaning — with exactly one catalog item's `text`, so
 /// the keyword-only (`--no-model`) path already surfaces a clear top match
 /// without needing the cosine signal or a selection model.

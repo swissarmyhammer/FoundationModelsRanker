@@ -1,6 +1,6 @@
 import FullMontyCore
 
-/// # The `Searcher` facade's living proof (plan.md §3a).
+/// # The `Searcher` facade's living proof.
 ///
 /// Three paths. The example examines them in this order:
 ///

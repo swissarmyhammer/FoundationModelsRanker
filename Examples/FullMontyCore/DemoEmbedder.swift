@@ -1,4 +1,4 @@
-// `FullMonty`'s embedder (plan.md §3a): the example must show the cosine
+// `FullMonty`'s embedder: the example must show the cosine
 // signal, and the package itself ships no embedder -- `TextEmbedding.swift`'s
 // header states that the caller supplies one. Every real embedder needs a
 // model, a GPU, or a network call, so the example supplies a hashed

@@ -19,15 +19,15 @@ let packageName = "FoundationModelsRanker"
 /// constant, the same pattern `packageName` follows.
 let exampleCoreName = "FullMontyCore"
 
-/// The SwiftPM manifest for FoundationModelsRanker (plan.md §3).
+/// The SwiftPM manifest for FoundationModelsRanker.
 ///
 /// The manifest declares no external package dependency. Every target builds
 /// against the macOS SDK alone, so anyone can build and test this package
 /// with no access to a private repository and no SSH key.
 ///
 /// The package holds a single library target, a Swift Testing unit test
-/// target, and the `Examples/FullMonty` / `Examples/FullMontyCore` targets
-/// (plan.md §3a): the package's runnable living proof of the `Searcher`
+/// target, and the `Examples/FullMonty` / `Examples/FullMontyCore` targets:
+/// the package's runnable living proof of the `Searcher`
 /// facade — demo only, never a dependency of the library. `FullMonty`'s
 /// entry logic lives in `FullMontyCore` (a plain library target, not the
 /// executable itself) so the test target can `@testable import` and invoke
@@ -35,8 +35,8 @@ let exampleCoreName = "FullMontyCore"
 /// FoundationModelsMetadataRegistry's `*Core` example targets.
 let package = Package(
     name: packageName,
-    // Commit to macOS 27 / FoundationModels v2, the floor both consumer
-    // repos use (plan.md §3).
+    // Commit to macOS 27, the floor for FoundationModels v2. Both consumer
+    // repos use the same floor.
     platforms: [
         .macOS("27.0")
     ],
@@ -70,7 +70,7 @@ let package = Package(
             ],
             path: "Tests/\(packageName)Tests"
         ),
-        // `FullMonty`'s entry logic (plan.md §3a): a fixture catalog of ~50
+        // `FullMonty`'s entry logic: a fixture catalog of ~50
         // developer-tool items, a handful of queries, printed matches with
         // per-signal scores and the model's final selection — the living
         // proof of the `Searcher` facade documented in `Searcher.swift`'s

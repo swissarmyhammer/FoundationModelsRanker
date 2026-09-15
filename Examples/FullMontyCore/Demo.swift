@@ -1,4 +1,4 @@
-// `FullMonty`'s entry logic (plan.md §3a): runs `demoQueries` against
+// `FullMonty`'s entry logic: runs `demoQueries` against
 // `toolCatalog` through the `Searcher` facade and formats the results —
 // factored into this library target (rather than living directly in
 // `FullMonty`'s `main.swift`) so `ExamplesSmokeTests` can invoke every
@@ -6,7 +6,7 @@
 // FoundationModelsMetadataRegistry's `CatalogSearchCore`/`SemanticSearchCore`
 // pattern.
 //
-// New to FoundationModelsRanker — no source file to port (plan.md §3a).
+// New to FoundationModelsRanker — no source file to port.
 
 import Foundation
 import FoundationModelsRanker
@@ -86,7 +86,7 @@ private func runRetrievalDemo(
     )
 }
 
-/// `--no-model`'s degraded, GPU-free path (plan.md §3a "the CI-safe path").
+/// `--no-model`'s degraded, GPU-free path, which is safe to run in CI.
 ///
 /// No embedder (keyword-only BM25 + trigram retrieval), no selection
 /// session — `mode: .retrieval` so `Searcher.search(_:limit:)` never even
@@ -135,8 +135,8 @@ public func runEmbedderDemo(
 ///
 /// Explicitly passes `Searcher.defaultSessionFactory` (rather than omitting
 /// `session:` and letting `Searcher.init`'s own default argument supply it)
-/// so this call site documents the exact swap point plan.md §3a's
-/// `--model default` flag was meant to demonstrate — see this package's
+/// so this call site documents the exact swap point. An earlier design used a
+/// `--model default` flag to demonstrate this point — see this package's
 /// `Searcher.swift` header for why: the installed SDK exposes only
 /// `SystemLanguageModel.default`, not `.fast`, so `defaultSessionFactory`
 /// already *is* `.default`; there is no longer a second value to swap to,

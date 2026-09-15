@@ -38,8 +38,31 @@ comments:
     - evidence: `swift test` — 283 tests, 22 suites, 0 failed, 0 skipped. `swift build` — build complete, 0 warnings. `swift build --package-path IntegrationTests --build-tests` — build complete, 0 warnings (real-model tests not run).
     - next: none. No fix was needed.
   timestamp: 2026-09-15T12:29:13.512682+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m2jgqtghav75ayy8k2a9j44h
+  text: |-
+    ### commit — changed
+    - evidence: 080ab9e docs: remove plan.md pointers from the library source comments
+    - next: none
+  timestamp: 2026-09-15T12:30:16.593855+00:00
+- actor: claude-code
+  id: 01m2jgvss3n8hqr9hhgwpe4zam
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (080ab9e). 0 findings (confirmed 0, refuted 0, failed 0). 19 files reviewed. 10 .kanban/ files are not reviewed because .reviewignore excludes them. The task description has no prior Review Findings section.
+    - next: The task moved to done. ^jkc8p96 does not depend on this task now. ^vy4vvqy still blocks ^jkc8p96.
+  timestamp: 2026-09-15T12:32:26.915996+00:00
+- actor: claude-code
+  id: 01m2jgwmqxgxwfx2fqaf5m516n
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 19 files in Sources/FoundationModelsRanker, comment lines only (+76/-76)
+    - test: green — swift test, 283 passed, 0 failed, 0 skipped; 0 warnings; IntegrationTests build passes
+    - commit: 080ab9e
+    - review: clean — 0 findings (7 validators)
+  timestamp: 2026-09-15T12:32:54.525874+00:00
+position_column: done
+position_ordinal: aa80
 title: Remove plan.md references from the library sources
 ---
 ## What
