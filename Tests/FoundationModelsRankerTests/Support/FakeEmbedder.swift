@@ -9,8 +9,7 @@ import FoundationModelsRanker
 /// determinism without a real model or GPU. `dimension` is configurable so
 /// tests can exercise dimension-sensitive callers, and an optional injected
 /// failure lets tests exercise a caller's graceful-skip path. Ported from
-/// CodeContextKit's `Tests/CodeContextKitTests/Support/FakeEmbedder.swift`
-/// (plan.md §5).
+/// CodeContextKit's `Tests/CodeContextKitTests/Support/FakeEmbedder.swift`.
 struct FakeEmbedder: TextEmbedding {
     let dimension: Int
 

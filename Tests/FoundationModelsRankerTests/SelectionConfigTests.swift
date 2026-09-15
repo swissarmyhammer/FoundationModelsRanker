@@ -2,7 +2,7 @@ import FoundationModelsRanker
 import Testing
 
 /// Tests for `SelectionConfig`'s defaults, budget clamping, and the
-/// `.selectionDefault` preamble's neutral wording (plan.md §6 phase 3) —
+/// `.selectionDefault` preamble's neutral wording —
 /// plus a scripted `AgentSession` fake proving the seam compiles end to end
 /// and its default `fork()` returns `self` unchanged.
 struct SelectionConfigTests {

@@ -5,7 +5,7 @@ import Testing
 /// FoundationModelsMetadataRegistry's `RRFTests.swift` (which itself adapted
 /// CodeContextKit's `RankerTests.swift` "RRF" and "Hit / Signals" sections,
 /// porting the Rust `swissarmyhammer-search` crate's `score.rs`/`lib.rs`
-/// test suites; see plan.md §5 "Search"). Covers the RRF acceptance
+/// test suites). Covers the RRF acceptance
 /// criteria for this port: `k = 60`, 0-based ranks, an absent signal
 /// contributing nothing (never zero-filled), and normalized scores staying
 /// in `[0, 1]`.

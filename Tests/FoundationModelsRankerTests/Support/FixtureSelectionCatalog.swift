@@ -1,7 +1,7 @@
 @testable import FoundationModelsRanker
 
 /// A simple in-memory `SelectionCatalog` conformer for `SelectionTier` tests
-/// (plan.md §6 phase 3) — adapted from the source repo's `FixtureItem:
+/// — adapted from the source repo's `FixtureItem:
 /// SearchableMetadata` fixtures (`SelectionTests`/`OverBudgetTests`), which
 /// wrapped items in a `MetadataIndex`. FoundationModelsRanker's `SelectionCatalog` is
 /// id-keyed directly, so this fixture holds ids and per-id block/summary

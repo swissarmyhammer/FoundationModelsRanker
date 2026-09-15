@@ -26,8 +26,33 @@ comments:
     - evidence: `swift build` (clean, after `rm -rf .build`) — build complete, 0 warnings. `swift test` — Test run with 283 tests in 22 suites passed after 0.178 seconds. 0 failed. 0 skipped. `swift run FullMonty --no-model` — exit code 0. `swift build --package-path IntegrationTests --build-tests` — build complete, 0 warnings.
     - next: none. The suite is clean. No fix was needed.
   timestamp: 2026-09-15T12:38:24.704683+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m2jh7wztgy1jxyk9eew661q3
+  text: |-
+    ### commit — changed
+    - evidence: 021f87a docs: remove plan.md pointers from Package.swift and the FullMonty example
+    - next: none
+  timestamp: 2026-09-15T12:39:03.418907+00:00
+- actor: claude-code
+  id: 01m2jhajvpa18arxqmvqkwv8nz
+  text: |-
+    ### review — clean
+    - step: review
+    - outcome: clean
+    - evidence: 0 findings. The engine ran `review sha HEAD~1..HEAD` (commit 021f87a). It reviewed 5 files and 7 validator attempts, with 0 failed. The ignore rule excluded 4 `.kanban/` files. The task had no prior review findings.
+    - next: The task moved to done. Task ^jkc8p96 (tests and the deletion of plan.md) is not blocked by this task now.
+  timestamp: 2026-09-15T12:40:31.350513+00:00
+- actor: claude-code
+  id: 01m2jhb4dtsbe5cdvxtwk3d79t
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 5 files (Package.swift, 4 in Examples/), comment lines only (+17/-18)
+    - test: green — swift test, 283 passed, 0 failed, 0 skipped; 0 warnings; FullMonty --no-model exit 0; IntegrationTests build passes
+    - commit: 021f87a
+    - review: clean — 0 findings (7 validators)
+  timestamp: 2026-09-15T12:40:49.338740+00:00
+position_column: done
+position_ordinal: ab80
 title: Remove plan.md references from Package.swift and the FullMonty example
 ---
 ## What

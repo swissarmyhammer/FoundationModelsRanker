@@ -4,7 +4,7 @@ import Testing
 
 @testable import FoundationModelsRanker
 
-/// Tests for `Searcher` (plan.md §3a): the package's one-call facade --
+/// Tests for `Searcher`: the package's one-call facade --
 /// "a list of things to search, then a query" -- composing `HybridRanker`
 /// (retrieval) with `SelectionTier` (agent selection) over an in-memory
 /// catalog built from the caller's items.
@@ -19,7 +19,7 @@ import Testing
 struct SearcherTests {
     // MARK: - Fixtures
 
-    /// The plan.md §3a "grep/glob/watch" example catalog: three tools, only
+    /// The README's "grep/glob/watch" example catalog: three tools, only
     /// one of which lexically/fuzzily overlaps with the queries this suite
     /// uses.
     static let toolItems = [
@@ -30,9 +30,9 @@ struct SearcherTests {
 
     /// A large catalog whose assembled selection prefix exceeds
     /// `SelectionConfig.defaultCapacityCharacterLimit` (32,000 characters) --
-    /// `Searcher` doesn't expose `capacityCharacterLimit` as a knob (plan.md
-    /// §3a's knob list omits it), so the over-budget path is forced here by
-    /// bulk `summary` content instead of a tiny forced limit
+    /// `Searcher` doesn't expose `capacityCharacterLimit` as a knob, so the
+    /// over-budget path is forced here by bulk `summary` content instead of
+    /// a tiny forced limit
     /// (`OverBudgetTests`'s approach against `SelectionTier` directly).
     /// `summary` (which pads the assembled prefix) is deliberately long
     /// filler for every entry so the budget is blown, and the catalog is
@@ -549,8 +549,7 @@ struct SearcherTests {
 
     /// A richer type participating directly through `Searchable`, proving
     /// the protocol -- not just `SearchItem` -- is the real seam `Searcher`
-    /// drives (plan.md §3a "A `Searchable` protocol lets richer types
-    /// participate without wrapping").
+    /// drives. A richer type can take part without a `SearchItem` wrapper.
     private struct FixtureTool: Searchable {
         let id: String
         let text: String

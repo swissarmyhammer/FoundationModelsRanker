@@ -3,7 +3,7 @@ import os
 
 @testable import FoundationModelsRanker
 
-// MARK: - Selection-tier `AgentSession` fixtures (plan.md §6 phase 3)
+// MARK: - Selection-tier `AgentSession` fixtures
 //
 // Ported from FoundationModelsMetadataRegistry's
 // `Tests/FoundationModelsMetadataRegistryTests/TestSupport/ScriptedAgentSession.swift`

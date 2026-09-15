@@ -5,12 +5,11 @@ import Testing
 /// BM25F-lite scoring tests, ported from FoundationModelsMetadataRegistry's
 /// `BM25Tests.swift` (which adapted CodeContextKit's `RankerTests.swift`
 /// "BM25" section, itself a port of the Rust `swissarmyhammer-search`
-/// crate's `score.rs` test suite; see plan.md §5 "Search"). The two
+/// crate's `score.rs` test suite). The two
 /// field-weight constants are ported here to FoundationModelsRanker's neutral
-/// `BM25.primaryFieldWeight` / `BM25.bodyFieldWeight` (plan.md §4.1). Kept
+/// `BM25.primaryFieldWeight` / `BM25.bodyFieldWeight`. Kept
 /// alongside `BM25RankerTests` (ported from CodeContextKit) even where
-/// cases overlap — each repo's suite encodes its own edge-case history
-/// (plan.md §5).
+/// cases overlap — each repo's suite encodes its own edge-case history.
 struct BM25Tests {
     /// Reference Okapi BM25 term contribution, for hand-comparison against
     /// `BM25Corpus.score`.
@@ -128,8 +127,8 @@ struct BM25Tests {
     }
 
     @Test
-    func fieldWeightConstantsMatchPlanSpec() {
-        // plan.md §4.1's ×5 primary-field / ×1 body-field weighting.
+    func fieldWeightConstantsWeightPrimaryFiveAndBodyOne() {
+        // The primary field has a weight of ×5. The body field has a weight of ×1.
         #expect(BM25.primaryFieldWeight == 5.0)
         #expect(BM25.bodyFieldWeight == 1.0)
         #expect(BM25.primaryFieldWeight == BM25.bodyFieldWeight * 5.0)
@@ -139,10 +138,9 @@ struct BM25Tests {
 /// BM25 formula and golden-ordering tests, ported from CodeContextKit's
 /// `RankerTests.swift` "BM25" section and its "Golden ordering: fused BM25 +
 /// trigram ranking" section (which port the Rust `swissarmyhammer-search`
-/// crate's `score.rs` test suite; see plan.md §5 "Search"). Kept alongside
+/// crate's `score.rs` test suite). Kept alongside
 /// `BM25Tests` (ported from FoundationModelsMetadataRegistry) even where
-/// cases overlap — each repo's suite encodes its own edge-case history
-/// (plan.md §5).
+/// cases overlap — each repo's suite encodes its own edge-case history.
 struct BM25RankerTests {
     /// Reference Okapi BM25 term contribution, for hand-comparison against
     /// `BM25Corpus.score`.

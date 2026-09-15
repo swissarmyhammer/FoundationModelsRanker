@@ -2,7 +2,7 @@ import FullMontyCore
 import FoundationModelsRanker
 import Testing
 
-/// Smoke tests for the `FullMonty` example (plan.md §3a).
+/// Smoke tests for the `FullMonty` example.
 ///
 /// `FullMontyCore` factors its entry logic into callable functions living in
 /// a plain library target, the same shape as
@@ -27,7 +27,7 @@ struct ExamplesSmokeTests {
         try #require(results.first { $0.query.contains(substring) })
     }
 
-    // MARK: - `--no-model`: keyword-only retrieval, GPU-free (acceptance criterion)
+    // MARK: - `--no-model`: keyword-only retrieval, GPU-free
 
     @Test("--no-model exits cleanly and answers every demo query")
     func noModelDemoAnswersEveryDemoQuery() async throws {
@@ -49,7 +49,7 @@ struct ExamplesSmokeTests {
         let signals = try #require(first.signals)
         #expect(signals.bm25 > 0.0)
         // No embedder is configured in this path -- cosine never ranks
-        // anything (plan.md §3a absent-signal rule).
+        // anything. A signal that cannot score does not go into the fusion.
         #expect(signals.cosine == 0.0)
     }
 
@@ -92,7 +92,7 @@ struct ExamplesSmokeTests {
         #expect(toolCatalog.count >= 50)
     }
 
-    // MARK: - `--embedder`: retrieval with the cosine signal, GPU-free (acceptance criterion)
+    // MARK: - `--embedder`: retrieval with the cosine signal, GPU-free
 
     @Test("--embedder answers every demo query")
     func embedderDemoAnswersEveryDemoQuery() async throws {
@@ -123,7 +123,7 @@ struct ExamplesSmokeTests {
         #expect(signals.cosine > 0.0)
     }
 
-    // MARK: - Selection path, driven by a scripted fake session (acceptance criterion)
+    // MARK: - Selection path, driven by a scripted fake session
 
     @Test("A scripted selection session answers every demo query with its own scripted selection")
     func scriptedSelectionSessionAnswersEveryQuery() async throws {

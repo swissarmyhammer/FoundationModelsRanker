@@ -4,7 +4,7 @@ import Testing
 @testable import FoundationModelsRanker
 
 /// Tests for the retroactive `LanguageModelSession: AgentSession`
-/// conformance (plan.md §3a, §6 phase 3): compile-level proofs that any
+/// conformance: compile-level proofs that any
 /// FoundationModels model constructs a valid `AgentSession` factory. Both
 /// seams now take the same shape, `@Sendable (String) -> any AgentSession`
 /// -- `SelectionConfig.init(model:)` and the `Searcher` facade's `session:` -- so
@@ -14,7 +14,7 @@ import Testing
 /// only; no `respond(to:)` call, so no GPU/model needed), per this task's
 /// Tests scope.
 ///
-/// SDK note (plan.md §7 risk): the installed macOS 27 SDK's
+/// SDK note: the installed macOS 27 SDK's
 /// `FoundationModels.swiftinterface` exposes only `SystemLanguageModel
 /// .default` -- no `.fast` static member -- so these tests use `.default`.
 /// Nothing here assumes `.fast` exists; this conformance is generic over

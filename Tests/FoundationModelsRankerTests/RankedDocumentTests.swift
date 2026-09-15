@@ -1,7 +1,7 @@
 import FoundationModelsRanker
 import Testing
 
-/// `RankedDocument` precompute tests (plan.md §6 phase 2).
+/// `RankedDocument` precompute tests.
 ///
 /// `RankedDocument.init(primaryText:bodyText:)` must produce the same
 /// weighted term frequencies, term sets, document lengths, and trigram sets

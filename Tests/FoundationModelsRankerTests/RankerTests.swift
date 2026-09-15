@@ -6,10 +6,10 @@ import Testing
 /// (Tokenizer, Trigram Dice, RRF, and Hit/Signals sections only — the BM25
 /// sections are out of scope here and stay in CodeContextKit), which itself
 /// ports `crates/swissarmyhammer-search`'s `tokenize.rs`/`score.rs` test
-/// suites (see plan.md §5 "Search"). Kept alongside `TrigramTests.swift`/
+/// suites. Kept alongside `TrigramTests.swift`/
 /// `RRFTests.swift` (ported from FoundationModelsMetadataRegistry) even
 /// where cases overlap — each repo's suite encodes its own edge-case
-/// history (plan.md §5).
+/// history.
 struct RankerTests {
     // MARK: - Tokenizer
 

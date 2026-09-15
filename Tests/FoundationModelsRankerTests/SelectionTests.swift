@@ -3,7 +3,7 @@ import Testing
 
 @testable import FoundationModelsRanker
 
-/// Tests for the selection tier's under-budget path (plan.md §6 phase 3): a
+/// Tests for the selection tier's under-budget path: a
 /// cached root session seeded once with the assembled prefix, `fork()` per
 /// `search()` call, one model call and no retrieval pass per search, the
 /// summary-vs-full block separation (`summaryBlock(forID:)` seeds the

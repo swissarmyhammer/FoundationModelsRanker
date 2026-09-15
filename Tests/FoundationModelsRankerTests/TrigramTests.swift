@@ -5,7 +5,7 @@ import Testing
 /// FoundationModelsMetadataRegistry's `TrigramTests.swift` (which itself
 /// adapted CodeContextKit's `RankerTests.swift` "Tokenizer" and "Trigram
 /// Dice" sections, porting the Rust `swissarmyhammer-search` crate's
-/// `tokenize.rs`/`score.rs` test suites; see plan.md §5 "Search"). `Trigram`
+/// `tokenize.rs`/`score.rs` test suites). `Trigram`
 /// canonicalizes through `Tokenizer.tokenize(text:)`, so both are exercised
 /// here.
 struct TrigramTests {

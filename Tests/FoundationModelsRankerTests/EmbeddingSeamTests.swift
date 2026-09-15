@@ -6,7 +6,7 @@ import Testing
 /// shape, and failure injection. Ported from CodeContextKit's
 /// `Tests/CodeContextKitTests/EmbeddingSeamTests.swift` -- the
 /// primitive-level cases only; its `TreeSitterWorker` integration cases are
-/// specific to CodeContextKit's GRDB corpus and stay there (plan.md §5).
+/// specific to CodeContextKit's GRDB corpus and stay there.
 struct EmbeddingSeamTests {
     private struct SampleError: Error {}
 

@@ -1,15 +1,14 @@
 import FoundationModelsRanker
 import Testing
 
-/// `SignalWeights` + `HybridRanker` fusion-pipeline tests (plan.md §6 phase
-/// 2), ported/adapted from FoundationModelsMetadataRegistry's
+/// `SignalWeights` + `HybridRanker` fusion-pipeline tests, ported/adapted
+/// from FoundationModelsMetadataRegistry's
 /// `RetrievalSearchTests.swift` (golden primary-field-weighted ranking,
 /// limit handling, empty-query/no-hits, weights configuration, first-seen
 /// tie-break) and CodeContextKit's `SearchCodeTests.swift` fusion coverage
 /// (keyword-only vs. semantic-only golden hits, fused-ordering primary-field
 /// dominance) — adapted from each repo's corpus/storage-specific fixtures to
-/// plain `RankedDocument` arrays, since `HybridRanker` is corpus-agnostic
-/// (plan.md §6 phase 2).
+/// plain `RankedDocument` arrays, since `HybridRanker` is corpus-agnostic.
 struct HybridRankerTests {
     // MARK: - Fixtures
 

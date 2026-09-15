@@ -2,8 +2,7 @@ import Foundation
 import FoundationModelsRanker
 import Testing
 
-/// `CosineScoring` tests (plan.md §1 "Genuinely different (stays put)", §6
-/// phase 2): the two cosine-scoring strategies CodeContextKit and
+/// `CosineScoring` tests: the two cosine-scoring strategies CodeContextKit and
 /// FoundationModelsMetadataRegistry each carry today, side by side in one
 /// shared utility.
 ///
@@ -118,8 +117,7 @@ struct CosineScoringTests {
     func cosineSimilarityMatchesMatvecScoresForL2NormalizedVectors() {
         // On L2-normalized inputs, cosine similarity reduces to a plain dot
         // product — the invariant that lets `matvecScores` skip the
-        // magnitude division `cosineSimilarity` performs (plan.md "Search",
-        // "Where the cosines happen").
+        // magnitude division `cosineSimilarity` performs.
         let dimension = 6
         let a = normalized((0..<dimension).map { _ in Float.random(in: -1...1) })
         let b = normalized((0..<dimension).map { _ in Float.random(in: -1...1) })

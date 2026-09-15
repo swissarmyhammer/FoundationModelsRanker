@@ -3,7 +3,7 @@ import FoundationModelsRanker
 import Testing
 
 /// Tests for `Selection`'s `@Generable` schema shape, `SelectionCatalog`
-/// conformance, and `RankDiagnostic`'s value semantics (plan.md §6 phase 3)
+/// conformance, and `RankDiagnostic`'s value semantics
 /// — the remaining core-type coverage for this port not already exercised
 /// by `SelectionConfigTests`.
 struct SelectionCoreTests {
