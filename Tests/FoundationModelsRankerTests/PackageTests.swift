@@ -8,19 +8,6 @@ import Testing
     #expect(Bool(true))
 }
 
-/// Proves `Package.swift` declares no external package dependency.
-///
-/// This package builds against the macOS SDK alone. Each `.package(` call in
-/// the manifest adds a remote checkout, and two of the checkouts this package
-/// once declared were private repositories that only members of one
-/// organization could read. The test reads the manifest text, so a dependency
-/// cannot come back without notice.
-@Test func theManifestDeclaresNoPackageDependency() throws {
-    let manifest = try String(contentsOf: manifestURL, encoding: .utf8)
-
-    #expect(!manifest.contains(".package("))
-}
-
 /// Proves `TextEmbedding` is a complete seam on its own: a caller writes a
 /// conformer against the public protocol and hands it to `Searcher`, with no
 /// embedder adapter shipped by this package.

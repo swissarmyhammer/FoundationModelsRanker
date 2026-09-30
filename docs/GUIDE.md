@@ -43,14 +43,19 @@ let searcher = try await Searcher(items, session: { instructions in
 })
 ```
 
+A `PooledSession` of FoundationModelsExtras is already an `AgentSession`.
+Its `fork()` continues the transcript with its own hold of the model, so the
+cached root session sends the catalog one time, and each search runs on a
+fork that does not see the other searches.
+
 ## Bring your own embedder
 
 `TextEmbedding` is `embed(_:)`. Nothing else. Each vector carries its own
 length, so an embedder does not declare one. Write a
 conformer around your own embedding backend and give it to `Searcher` as
-`embedder:`. Cosine similarity then joins the fused ranking. This package
-ships no embedder of its own, and every embedding backend connects the same
-way:
+`embedder:`. Cosine similarity then joins the fused ranking. A
+`PooledEmbedder` of FoundationModelsExtras is already a `TextEmbedding`, so
+it needs no conformer. Every other embedding backend connects this way:
 
 ```swift
 import FoundationModelsRanker

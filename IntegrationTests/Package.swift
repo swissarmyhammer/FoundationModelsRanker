@@ -12,9 +12,10 @@ import PackageDescription
 // - `swift test --package-path IntegrationTests` runs the real-model tests.
 //   Use `--filter` inside this package to run one test.
 //
-// The root package declares no external dependency, so there is no pin here
-// to keep in step with the root manifest. This package depends on the root
-// package by path and on nothing else.
+// This package depends on the root package by path and on nothing else. The
+// root package depends on FoundationModelsExtras, and this package gets that
+// dependency through the root package, so there is no pin here to keep in
+// step with the root manifest.
 
 /// The root package, library product, and library target name.
 ///

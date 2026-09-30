@@ -11,8 +11,7 @@ import Testing
 /// breaks this test before it breaks a reader pasting the README into their
 /// own project. One test stands for each Swift block of the README, in the
 /// order the README gives them; the `## Install` block is the one block no
-/// test can compile, and its own test states why. A last test holds the
-/// prose itself to the package's dependency-free shape.
+/// test can compile, and its own test states why.
 ///
 /// Reuses `SearcherTests.toolItems`'s grep/glob/watch fixture -- the same
 /// three-item list `README.md`'s lead example itself lists -- and the same
@@ -189,26 +188,6 @@ struct ReadmeExampleTests {
 
         let declaration = try #require(manifest.firstMatch(of: /let packageName = "(?<name>\w+)"/))
         #expect(readme.contains(".package(url: \"https://github.com/swissarmyhammer/\(declaration.name)\""))
-    }
-
-    /// Holds `README.md` to the package's dependency-free shape.
-    ///
-    /// The package once depended on a router package and on an MLX/Hugging
-    /// Face embedding stack, and the README named all three. It depends on
-    /// nothing now, and `Package.swift` declares no package dependency
-    /// (`PackageTests.theManifestDeclaresNoPackageDependency`). This test
-    /// keeps the document from drifting back to the old story: it reads the
-    /// README text and fails on any of the three names, in any letter case.
-    @Test("README.md names no removed dependency")
-    func theReadmeNamesNoRemovedDependency() throws {
-        let readme = try String(contentsOf: readmeURL, encoding: .utf8)
-
-        for name in ["Router", "MLX", "HuggingFace"] {
-            #expect(
-                readme.range(of: name, options: .caseInsensitive) == nil,
-                "README.md still names \(name), which this package no longer depends on."
-            )
-        }
     }
 }
 

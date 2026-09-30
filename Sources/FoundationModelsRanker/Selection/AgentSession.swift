@@ -27,8 +27,10 @@ import FoundationModels
 /// Callers use this seam and nothing else. Thus a unit test can drive a
 /// selection tier against a scripted fake that conforms to this protocol,
 /// with no GPU. A caller that has its own model writes its own conformer.
-/// This package supplies the conformance for `LanguageModelSession` (see
-/// `LanguageModelSessionSupport.swift`), and no other.
+/// This package supplies two conformances: `LanguageModelSession` (see
+/// `LanguageModelSessionSupport.swift`) and the FoundationModelsExtras
+/// `PooledSession` (see `PooledSessionSupport.swift`). The fork of a
+/// `PooledSession` continues its transcript, so it is a real fork.
 public protocol AgentSession: Sendable {
     /// Sends `prompt` to the session and returns its complete text response.
     ///

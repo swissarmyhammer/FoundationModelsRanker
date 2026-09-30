@@ -19,11 +19,20 @@ let packageName = "FoundationModelsRanker"
 /// constant, the same pattern `packageName` follows.
 let exampleCoreName = "FullMontyCore"
 
+/// The package and the core library product of FoundationModelsExtras.
+///
+/// The package name and the product name are the same. The library target
+/// and the test target both name the product, so the name is a constant.
+let extrasName = "FoundationModelsExtras"
+
 /// The SwiftPM manifest for FoundationModelsRanker.
 ///
-/// The manifest declares no external package dependency. Every target builds
-/// against the macOS SDK alone, so anyone can build and test this package
-/// with no access to a private repository and no SSH key.
+/// The manifest declares one external package dependency: the core
+/// `FoundationModelsExtras` product. The library uses it to make
+/// `PooledSession` an `AgentSession` and `PooledEmbedder` a `TextEmbedding`,
+/// so a caller that has a pooled model writes no conformance code. Extras
+/// compiles MLX, and the checkout uses SSH, so a build needs read access to
+/// the swissarmyhammer repositories.
 ///
 /// The package holds a single library target, a Swift Testing unit test
 /// target, and the `Examples/FullMonty` / `Examples/FullMontyCore` targets:
@@ -55,11 +64,15 @@ let package = Package(
             targets: [exampleCoreName]
         ),
     ],
-    dependencies: [],
+    dependencies: [
+        .package(url: "git@github.com:swissarmyhammer/\(extrasName).git", branch: "main")
+    ],
     targets: [
         .target(
             name: packageName,
-            dependencies: [],
+            dependencies: [
+                .product(name: extrasName, package: extrasName)
+            ],
             path: "Sources/\(packageName)"
         ),
         .testTarget(
@@ -67,6 +80,9 @@ let package = Package(
             dependencies: [
                 .target(name: packageName),
                 .target(name: exampleCoreName),
+                // `PooledConformanceTests` makes a `ModelPool` with a stub
+                // loader, so the tests name the Extras types directly.
+                .product(name: extrasName, package: extrasName),
             ],
             path: "Tests/\(packageName)Tests"
         ),

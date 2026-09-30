@@ -8,7 +8,9 @@ get back ranked results.
 The ranker fuses BM25 keyword matching, trigram fuzzy matching, and optional
 cosine similarity with reciprocal rank fusion. An agent on the on-device
 system model can then pick the final result. You supply the model and the
-embedder, and the package has no package dependency.
+embedder. The package depends on FoundationModelsExtras, so a `PooledSession`
+is an `AgentSession` and a `PooledEmbedder` is a `TextEmbedding` with no code
+of your own.
 
 ```swift
 import FoundationModelsRanker

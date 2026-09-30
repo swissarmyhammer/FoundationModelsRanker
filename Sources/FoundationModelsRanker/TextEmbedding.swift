@@ -9,8 +9,10 @@
 /// Abstracts over the concrete embedding backend so callers depend on this
 /// narrow protocol rather than a specific implementation: conformers embed
 /// a batch of texts; tests substitute a deterministic double. The caller
-/// supplies the conformer: this package ships no embedder of its own, and
-/// `embed(_:)` is the whole contract a caller writes against.
+/// supplies the conformer, and `embed(_:)` is the whole contract a caller
+/// writes against. This package ships no embedding model of its own. It
+/// supplies one conformance: the FoundationModelsExtras `PooledEmbedder`
+/// (see `PooledEmbedderSupport.swift`).
 ///
 /// The protocol declares no vector length. Each returned vector carries its
 /// own length, so an embedder that loads its model at the first call does
