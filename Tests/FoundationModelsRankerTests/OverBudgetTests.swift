@@ -222,6 +222,34 @@ struct OverBudgetTests {
     }
 
     @Test
+    func anAsyncFactoryIsAwaitedOneTimeForEachOverBudgetRun() async throws {
+        // The factory waits before it gives each session, as a pooled model
+        // does while it loads. Each run still gets one session, seeded with
+        // that run's prefix, in run order.
+        let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha"]}"#])
+        let config = SelectionConfig(model: factory.makeSessionAfterDelay, capacityCharacterLimit: Self.twoCandidateLimit)
+        let tier = Self.makeTier(config: config)
+
+        let matches = try await tier.search(intent: "alpha", limit: Self.resultLimit)
+
+        #expect(factory.receivedInstructions == Self.expectedRuns.map(Self.prefix(for:)))
+        #expect(matches.map(\.id) == ["alpha"])
+    }
+
+    @Test
+    func aThrowingFactoryMakesAnOverBudgetSearchThrowItsError() async throws {
+        let config = SelectionConfig(
+            model: { _ in throw SessionFactoryError() },
+            capacityCharacterLimit: Self.twoCandidateLimit
+        )
+        let tier = Self.makeTier(config: config)
+
+        await #expect(throws: SessionFactoryError()) {
+            try await tier.search(intent: "alpha", limit: Self.resultLimit)
+        }
+    }
+
+    @Test
     func overBudgetFactorySessionIsNeverForked() async throws {
         let session = ScriptedAgentSession(Self.expectedRuns.map { _ in #"{"ids":["alpha"]}"# })
         let config = SelectionConfig(model: { _ in session }, capacityCharacterLimit: Self.twoCandidateLimit)

@@ -28,7 +28,8 @@ public typealias FullMontyResult = (query: String, matches: [SelectionMatch])
 ///   - embedder: embeds `toolCatalog` and every query for the cosine signal,
 ///     or `nil` for keyword-only retrieval.
 ///   - session: creates a selection session, or `nil` to leave selection
-///     unavailable (`mode` should then be `.retrieval`).
+///     unavailable (`mode` should then be `.retrieval`). It can `await` and
+///     `throw`, as the `session:` parameter of `Searcher` can.
 ///   - mode: which tier `Searcher.search(_:limit:)` answers through.
 ///     Defaults to `.auto`.
 ///   - limit: the maximum number of matches per query. Defaults to `5`.
@@ -37,7 +38,7 @@ public typealias FullMontyResult = (query: String, matches: [SelectionMatch])
 /// - Throws: whatever `Searcher.init` or `Searcher.search(_:limit:)` throws.
 public func runFullMontyDemo(
     embedder: (any TextEmbedding)?,
-    session: (@Sendable (String) -> any AgentSession)?,
+    session: (@Sendable (String) async throws -> any AgentSession)?,
     mode: Searcher.Mode = .auto,
     limit: Int = 5,
     onDiagnostic: @escaping @Sendable (RankDiagnostic) -> Void = { _ in }

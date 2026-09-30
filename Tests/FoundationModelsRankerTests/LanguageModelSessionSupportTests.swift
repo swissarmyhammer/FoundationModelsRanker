@@ -6,7 +6,7 @@ import Testing
 /// Tests for the retroactive `LanguageModelSession: AgentSession`
 /// conformance: compile-level proofs that any
 /// FoundationModels model constructs a valid `AgentSession` factory. Both
-/// seams now take the same shape, `@Sendable (String) -> any AgentSession`
+/// seams now take the same shape, `@Sendable (String) async throws -> any AgentSession`
 /// -- `SelectionConfig.init(model:)` and the `Searcher` facade's `session:` -- so
 /// one test reads the bare closure type and the other reads the closure
 /// through a `SelectionConfig`. A fork-semantics test stands beside them.
@@ -23,18 +23,18 @@ struct LanguageModelSessionSupportTests {
     // MARK: - Compile-level conformance
 
     @Test
-    func languageModelSessionFactoryClosureTypeChecksAsAnAgentSessionFactory() {
-        let factory: @Sendable (String) -> any AgentSession = { instructions in
+    func languageModelSessionFactoryClosureTypeChecksAsAnAgentSessionFactory() async throws {
+        let factory: @Sendable (String) async throws -> any AgentSession = { instructions in
             LanguageModelSession(model: SystemLanguageModel.default, instructions: instructions)
         }
 
-        let session = factory("selection guidance")
+        let session = try await factory("selection guidance")
 
         #expect(session is LanguageModelSession)
     }
 
     @Test
-    func languageModelSessionFactoryClosureTypeChecksAsASelectionConfigModelFactory() {
+    func languageModelSessionFactoryClosureTypeChecksAsASelectionConfigModelFactory() async throws {
         // `SelectionConfig.init(model:)` takes only the instructions text and
         // stores it as a `.factory` session source. A plain
         // `LanguageModelSession` factory applies no grammar of its own: it
@@ -48,7 +48,7 @@ struct LanguageModelSessionSupportTests {
             Issue.record("the model: initializer must store a `.factory` source")
             return
         }
-        let session = makeSession("selection guidance")
+        let session = try await makeSession("selection guidance")
 
         #expect(session is LanguageModelSession)
     }

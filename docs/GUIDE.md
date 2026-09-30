@@ -31,6 +31,18 @@ let searcher = try await Searcher(items, session: { instructions in
 })
 ```
 
+The factory can `await` and `throw`. Use this when a session comes from a
+model pool that loads the model at the first request. An error from the
+factory comes out of `search`. The tier awaits the factory one time for its
+cached root session, and one time for each prompt when the catalog is too
+large for one prompt:
+
+```swift
+let searcher = try await Searcher(items, session: { instructions in
+    try await pool.session(instructions: instructions)
+})
+```
+
 ## Bring your own embedder
 
 `TextEmbedding` is `embed(_:)`. Nothing else. Each vector carries its own

@@ -85,9 +85,15 @@ public actor SelectionTier {
     /// `.unknownSelectedId`).
     private let onDiagnostic: @Sendable (RankDiagnostic) -> Void
 
-    /// This tier's cached root session — `nil` until the first under-budget
-    /// `search(intent:limit:)` call creates and caches it.
-    private var rootSession: (any AgentSession)?
+    /// The task that makes this tier's cached root session — `nil` until the
+    /// first under-budget `search(intent:limit:)` call starts it.
+    ///
+    /// The tier keeps the task, not the session, because the factory can
+    /// `await`. While one search awaits the factory, the actor can start a
+    /// second search. That search awaits the same task, so the factory makes
+    /// one root only. When the factory throws, `cachedRootSession()` clears
+    /// the task, so that the next search asks the factory again.
+    private var rootSessionTask: Task<any AgentSession, any Error>?
 
     /// The text between two candidate entries in an assembled prefix.
     private static let candidateSeparator = "\n\n"
@@ -113,6 +119,12 @@ public actor SelectionTier {
             limit: config.capacityCharacterLimit
         )
         self.onDiagnostic = onDiagnostic
+    }
+
+    /// Cancels the root session task if it still runs. No search can await
+    /// the task after the tier is gone.
+    deinit {
+        rootSessionTask?.cancel()
     }
 
     /// Creates a selection tier and ignores `retrievalRanking`.
@@ -176,7 +188,8 @@ public actor SelectionTier {
     ///   yields an empty result without forking or creating a session: it
     ///   has no id to select, and a model that gets a prompt with no
     ///   candidates answers with text that does not decode.
-    /// - Throws: whatever the underlying session's
+    /// - Throws: whatever a `.factory` source throws when it makes a
+    ///   session, or whatever the underlying session's
     ///   `fork()`/`respond(to:generating:)` throws.
     public func search(intent: String, limit: Int) async throws -> [SelectionMatch] {
         guard limit > 0 else { return [] }
@@ -202,20 +215,45 @@ public actor SelectionTier {
     /// `prompt(prefix:intent:)` carries the prefix instead. Either root is
     /// forked once per call by `search(intent:limit:)`.
     ///
+    /// Searches that start while the root is not ready await the same
+    /// `rootSessionTask`, so a `.factory` source is awaited one time for the
+    /// root. A factory error comes out of every search that awaits it, and
+    /// clears the task, so that a later search asks the factory again.
+    ///
     /// - Returns: the cached root session -- every catalog id is a legal
     ///   selection under budget, since the assembled prefix already
     ///   summarizes the whole catalog.
-    private func cachedRootSession() -> any AgentSession {
-        if let rootSession { return rootSession }
-        let session: any AgentSession
-        switch config.sessionSource {
-        case .factory(let makeSession):
-            session = makeSession(assembledPrefix)
-        case .session(let suppliedSession):
-            session = suppliedSession
+    /// - Throws: whatever a `.factory` source throws.
+    private func cachedRootSession() async throws -> any AgentSession {
+        let task = rootSessionTask ?? makeRootSessionTask()
+        rootSessionTask = task
+        do {
+            return try await task.value
+        } catch {
+            if rootSessionTask == task {
+                rootSessionTask = nil
+            }
+            throw error
         }
-        rootSession = session
-        return session
+    }
+
+    /// Starts the task that makes this tier's root session from its session
+    /// source.
+    ///
+    /// - Returns: the task, which gives the session that
+    ///   `config.sessionSource` makes from the full assembled prefix, or the
+    ///   supplied session itself.
+    private func makeRootSessionTask() -> Task<any AgentSession, any Error> {
+        let sessionSource = config.sessionSource
+        let prefix = assembledPrefix
+        return Task {
+            switch sessionSource {
+            case .factory(let makeSession):
+                return try await makeSession(prefix)
+            case .session(let suppliedSession):
+                return suppliedSession
+            }
+        }
     }
 
     /// Assembles the prompt for one model call.
@@ -272,8 +310,8 @@ public actor SelectionTier {
     /// - Returns: every id the model answered, run by run, in the model's
     ///   order inside each run. Not yet resolved, deduplicated, or cut to a
     ///   limit; `matches(forIDs:limit:)` does that.
-    /// - Throws: whatever a one-off session's `fork()` or
-    ///   `respond(to:generating:)` throws.
+    /// - Throws: whatever a `.factory` source throws, or whatever a one-off
+    ///   session's `fork()` or `respond(to:generating:)` throws.
     private func selectFromEveryRun(intent: String) async throws -> [String] {
         var selectedIDs: [String] = []
         for run in candidateRuns {
@@ -297,11 +335,12 @@ public actor SelectionTier {
     ///
     /// - Parameter instructions: the run's assembled prefix.
     /// - Returns: the session to prompt for this run.
-    /// - Throws: whatever the supplied session's `fork()` throws.
+    /// - Throws: whatever a `.factory` source throws, or whatever the
+    ///   supplied session's `fork()` throws.
     private func oneOffSession(instructions: String) async throws -> any AgentSession {
         switch config.sessionSource {
         case .factory(let makeSession):
-            return makeSession(instructions)
+            return try await makeSession(instructions)
         case .session(let suppliedSession):
             return try await suppliedSession.fork()
         }

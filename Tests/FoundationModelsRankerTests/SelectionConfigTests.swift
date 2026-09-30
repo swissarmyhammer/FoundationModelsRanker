@@ -41,14 +41,14 @@ struct SelectionConfigTests {
     // MARK: - Session source
 
     @Test
-    func theModelInitializerWrapsItsFactoryInTheFactorySource() {
+    func theModelInitializerWrapsItsFactoryInTheFactorySource() async throws {
         let config = SelectionConfig(model: { _ in ScriptedAgentSession() })
 
         guard case .factory(let makeSession) = config.sessionSource else {
             Issue.record("the model: initializer must store a `.factory` source")
             return
         }
-        #expect(makeSession("instructions") is ScriptedAgentSession)
+        #expect(try await makeSession("instructions") is ScriptedAgentSession)
     }
 
     @Test

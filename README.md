@@ -27,8 +27,9 @@ let hits = try await searcher.search("how do I find TODO comments in my code")
 // hits[0].id == "grep"
 ```
 
-Any `LanguageModelSession` can be the `session:`, and any `TextEmbedding`
-conformer can be the `embedder:`. The [guide](docs/GUIDE.md) shows both.
+Any `LanguageModelSession` can be the `session:`, or a session factory that
+can `await` a pooled model. Any `TextEmbedding` conformer can be the
+`embedder:`. The [guide](docs/GUIDE.md) shows each.
 
 ## Install
 

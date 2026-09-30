@@ -31,7 +31,12 @@ public enum SelectionSessionSource: Sendable {
     /// Makes a new session for each assembled prefix. The prefix becomes the
     /// session's instructions, so the prompt carries the intent alone, under
     /// the `# Task` heading every prompt puts the intent under.
-    case factory(@Sendable (String) -> any AgentSession)
+    ///
+    /// The factory can `await` and `throw`: a session can come from a pooled
+    /// model that loads at the first request. An error from the factory
+    /// comes out of `SelectionTier.search(intent:limit:)`. A synchronous
+    /// closure is also a factory.
+    case factory(@Sendable (String) async throws -> any AgentSession)
 
     /// Reuses one supplied session. The tier forks the session for each
     /// prompt, and the prefix rides above the `# Task` heading on each
@@ -84,13 +89,15 @@ public struct SelectionConfig: Sendable {
     ///
     /// - Parameters:
     ///   - model: creates a session seeded with the given instructions
-    ///     text.
+    ///     text. It can `await` (for example, while a pooled model loads)
+    ///     and `throw`; an error from it comes out of the search that asked
+    ///     for the session.
     ///   - preamble: the selection guidance prepended to every assembled
     ///     prefix. Defaults to `.selectionDefault`.
     ///   - capacityCharacterLimit: the assembled prefix's character
     ///     budget. Defaults to `defaultCapacityCharacterLimit`.
     public init(
-        model: @escaping @Sendable (String) -> any AgentSession,
+        model: @escaping @Sendable (String) async throws -> any AgentSession,
         preamble: String = .selectionDefault,
         capacityCharacterLimit: Int = SelectionConfig.defaultCapacityCharacterLimit
     ) {

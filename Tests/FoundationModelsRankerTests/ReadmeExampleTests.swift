@@ -99,6 +99,28 @@ struct ReadmeExampleTests {
         #expect(hits.first?.id == "glob")
     }
 
+    /// The guide's pooled-model factory block: a `session:` closure that
+    /// awaits a model pool before it gives the session.
+    ///
+    /// `pool` below stands in for the caller's model pool. Its session comes
+    /// after a wait, as a pooled model's first session does while the model
+    /// loads. The one factory call proves that the tier awaits the factory
+    /// one time for its cached root.
+    @Test("A session: closure that awaits a model pool answers selection")
+    func sessionClosureThatAwaitsAModelPoolAnswersSelection() async throws {
+        let items = SearcherTests.toolItems
+        let pool = RecordingSessionFactory(responses: [#"{"ids":["glob"]}"#])
+
+        let searcher = try await Searcher(items, session: { instructions in
+            try await pool.makeSessionAfterDelay(instructions: instructions)
+        })
+
+        let hits = try await searcher.search("find files by name")
+
+        #expect(hits.first?.id == "glob")
+        #expect(pool.receivedInstructions.count == 1)
+    }
+
     /// README's "Bring your own embedder" block: a caller-written
     /// `TextEmbedding` conformer, given to `Searcher` as `embedder:`.
     ///

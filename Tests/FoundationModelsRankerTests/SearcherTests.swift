@@ -52,6 +52,10 @@ struct SearcherTests {
     /// A query vector length that differs from `embeddingVectorLength`.
     private static let mismatchedQueryVectorLength = 4
 
+    /// The `limit` the async-closure searches in this suite ask for: more
+    /// than the catalog holds, so no test truncates by accident.
+    private static let resultLimit = 5
+
     // MARK: - `.retrieval` mode: no session touched, real signals attached
 
     @Test
@@ -322,6 +326,36 @@ struct SearcherTests {
         // unavailable.
         await #expect(throws: SelectionTierUnavailable.self) {
             try await nilSearcher.search("anything", limit: 5)
+        }
+    }
+
+    @Test
+    func anAsyncSessionClosureAnswersSelection() async throws {
+        // The closure awaits before it gives the session, as a pooled model
+        // does while it loads at the first request.
+        let factory = RecordingSessionFactory(responses: [#"{"ids":["glob"]}"#])
+        let searcher = try await Searcher(
+            Self.toolItems,
+            session: { instructions in try await factory.makeSessionAfterDelay(instructions: instructions) },
+            mode: .selection
+        )
+
+        let matches = try await searcher.search("find files by name", limit: Self.resultLimit)
+
+        #expect(matches.map(\.id) == ["glob"])
+        #expect(factory.receivedInstructions.count == 1)
+    }
+
+    @Test
+    func aThrowingSessionClosureMakesSearchThrowItsError() async throws {
+        let searcher = try await Searcher(
+            Self.toolItems,
+            session: { _ in throw SessionFactoryError() },
+            mode: .selection
+        )
+
+        await #expect(throws: SessionFactoryError()) {
+            try await searcher.search("find files by name", limit: Self.resultLimit)
         }
     }
 

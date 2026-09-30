@@ -42,7 +42,7 @@ import FoundationModels
 ///
 /// `session:` has two front doors, one for each kind of caller. A caller
 /// that can make a session for each prefix gives a **factory closure**
-/// (`@Sendable (String) -> any AgentSession`): a `LanguageModelSession`
+/// (`@Sendable (String) async throws -> any AgentSession`): a `LanguageModelSession`
 /// factory, or a factory for a conformer the caller writes. The assembled
 /// candidate prefix becomes each new session's instructions. A caller that
 /// already holds **one live session** gives that session itself
@@ -98,7 +98,7 @@ public struct Searcher: Sendable {
     /// Exposed as a documented seam (rather than an unnamed closure
     /// literal) so a caller can also pass it explicitly, e.g. to restore
     /// the on-device default after overriding `session:` conditionally.
-    public static let defaultSessionFactory: @Sendable (String) -> any AgentSession = { instructions in
+    public static let defaultSessionFactory: @Sendable (String) async throws -> any AgentSession = { instructions in
         LanguageModelSession(model: .default, instructions: instructions)
     }
 
@@ -131,7 +131,10 @@ public struct Searcher: Sendable {
     ///     prefix -- the seam that plugs in any `LanguageModelSession`
     ///     model, or any other `AgentSession` conformer the caller writes --
     ///     and is never hardcoded. The prefix becomes each new session's
-    ///     instructions, so each call can get a fresh context. Defaults to
+    ///     instructions, so each call can get a fresh context. The closure
+    ///     can `await` (for example, while a pooled model loads at the first
+    ///     request) and `throw`; an error from it comes out of
+    ///     `search(_:limit:)`. A synchronous closure also works. Defaults to
     ///     the on-device system model; pass `nil` explicitly to leave
     ///     selection unavailable (`mode: .selection` then throws
     ///     `SelectionTierUnavailable`; `.auto` degrades to retrieval). A
@@ -149,7 +152,7 @@ public struct Searcher: Sendable {
     public init<Item: Searchable>(
         _ items: [Item],
         embedder: (any TextEmbedding)? = nil,
-        session: (@Sendable (String) -> any AgentSession)? = Searcher.defaultSessionFactory,
+        session: (@Sendable (String) async throws -> any AgentSession)? = Searcher.defaultSessionFactory,
         weights: SignalWeights = SignalWeights(),
         preamble: String = .selectionDefault,
         mode: Mode = .auto,

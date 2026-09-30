@@ -186,7 +186,29 @@ final class RecordingSessionFactory: Sendable {
         receivedInstructionsBox.withLock { $0.append(instructions) }
         return ScriptedAgentSession(responses)
     }
+
+    /// The time `makeSessionAfterDelay(instructions:)` waits before it makes
+    /// a session. It stands in for a pooled model that loads at the first
+    /// request.
+    static let delay: Duration = .milliseconds(20)
+
+    /// Waits `delay`, then creates and records a new scripted session. This
+    /// is an async factory for `SelectionConfig`'s `model` parameter and the
+    /// `session:` parameter of `Searcher`.
+    ///
+    /// - Parameter instructions: the instructions text to record.
+    /// - Returns: a freshly-scripted `ScriptedAgentSession`.
+    /// - Throws: `CancellationError` when the task is cancelled during the
+    ///   wait.
+    func makeSessionAfterDelay(instructions: String) async throws -> any AgentSession {
+        try await Task.sleep(for: Self.delay)
+        return makeSession(instructions: instructions)
+    }
 }
+
+/// Thrown by a test session factory that fails. A test uses it to show that
+/// an error from the factory comes out of `search`.
+struct SessionFactoryError: Error, Equatable {}
 
 /// A thread-safe call counter — used to assert a closure ran an exact number
 /// of times without needing a bespoke lock-boxed fixture per test.

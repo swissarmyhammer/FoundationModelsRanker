@@ -38,6 +38,10 @@ struct SelectionTests {
         .init(id: "status", block: "the full status block", summary: "reports the current release state"),
     ])
 
+    /// The `limit` the async-factory searches in this file ask for: more
+    /// than the catalog holds, so no test truncates by accident.
+    static let resultLimit = 5
+
     // MARK: - Cached root + fork-per-call
 
     @Test
@@ -66,6 +70,66 @@ struct SelectionTests {
         #expect(factoryCallCount.count == 1)
         #expect(first.map(\.id) == ["deploy"])
         #expect(second.map(\.id) == ["rollback"])
+    }
+
+    // MARK: - An async session factory
+
+    @Test
+    func anAsyncFactoryIsAwaitedOneTimeForTheCachedRootWhenSearchesOverlap() async throws {
+        // The factory waits before it gives the root, as a pooled model does
+        // while it loads. Both searches start before the root is ready, so a
+        // tier that does not share the pending root awaits the factory two
+        // times.
+        let answer = #"{"ids":["deploy"]}"#
+        let root = RootSessionRespondCalledDirectlySession(forkResponses: [answer, answer])
+        let factoryCallCount = CallCounter()
+        let config = SelectionConfig(model: { _ in
+            factoryCallCount.increment()
+            try await Task.sleep(for: RecordingSessionFactory.delay)
+            return root
+        })
+        let tier = SelectionTier(catalog: Self.catalog, config: config, onDiagnostic: { _ in })
+
+        async let first = tier.search(intent: "first task", limit: Self.resultLimit)
+        async let second = tier.search(intent: "second task", limit: Self.resultLimit)
+        let answers = try await [first, second]
+
+        #expect(factoryCallCount.count == 1)
+        #expect(root.forkCount == 2)
+        #expect(answers.map { $0.map(\.id) } == [["deploy"], ["deploy"]])
+    }
+
+    @Test
+    func aThrowingFactoryMakesSearchThrowItsError() async throws {
+        let config = SelectionConfig(model: { _ in throw SessionFactoryError() })
+        let tier = SelectionTier(catalog: Self.catalog, config: config, onDiagnostic: { _ in })
+
+        await #expect(throws: SessionFactoryError()) {
+            try await tier.search(intent: "ship the release", limit: Self.resultLimit)
+        }
+    }
+
+    @Test
+    func aSearchAfterAFactoryErrorAwaitsTheFactoryAgain() async throws {
+        // A factory error must not stay cached as the root: the next search
+        // asks the factory again and gets its answer.
+        let factoryCallCount = CallCounter()
+        let session = ScriptedAgentSession([#"{"ids":["deploy"]}"#])
+        let config = SelectionConfig(model: { _ in
+            if factoryCallCount.increment() == 1 {
+                throw SessionFactoryError()
+            }
+            return session
+        })
+        let tier = SelectionTier(catalog: Self.catalog, config: config, onDiagnostic: { _ in })
+
+        await #expect(throws: SessionFactoryError()) {
+            try await tier.search(intent: "ship the release", limit: Self.resultLimit)
+        }
+        let matches = try await tier.search(intent: "ship the release", limit: Self.resultLimit)
+
+        #expect(factoryCallCount.count == 2)
+        #expect(matches.map(\.id) == ["deploy"])
     }
 
     // MARK: - One prompt that picks
