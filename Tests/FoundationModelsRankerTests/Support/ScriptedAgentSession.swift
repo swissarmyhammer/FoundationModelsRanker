@@ -187,10 +187,13 @@ final class RecordingSessionFactory: Sendable {
         return ScriptedAgentSession(responses)
     }
 
+    /// The number of milliseconds in `delay`.
+    static let delayMilliseconds = 20
+
     /// The time `makeSessionAfterDelay(instructions:)` waits before it makes
     /// a session. It stands in for a pooled model that loads at the first
     /// request.
-    static let delay: Duration = .milliseconds(20)
+    static let delay: Duration = .milliseconds(delayMilliseconds)
 
     /// Waits `delay`, then creates and records a new scripted session. This
     /// is an async factory for `SelectionConfig`'s `model` parameter and the

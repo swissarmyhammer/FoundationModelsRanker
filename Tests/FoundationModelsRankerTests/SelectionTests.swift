@@ -116,10 +116,7 @@ struct SelectionTests {
         let factoryCallCount = CallCounter()
         let session = ScriptedAgentSession([#"{"ids":["deploy"]}"#])
         let config = SelectionConfig(model: { _ in
-            if factoryCallCount.increment() == 1 {
-                throw SessionFactoryError()
-            }
-            return session
+            try Self.sessionAfterAFirstFailure(callCount: factoryCallCount, session: session)
         })
         let tier = SelectionTier(catalog: Self.catalog, config: config, onDiagnostic: { _ in })
 
@@ -130,6 +127,24 @@ struct SelectionTests {
 
         #expect(factoryCallCount.count == 2)
         #expect(matches.map(\.id) == ["deploy"])
+    }
+
+    /// The factory logic of `aSearchAfterAFactoryErrorAwaitsTheFactoryAgain`.
+    /// The first call throws. Each call after it returns `session`.
+    ///
+    /// - Parameters:
+    ///   - callCount: the counter that this call increments.
+    ///   - session: the session that each call after the first returns.
+    /// - Returns: `session`.
+    /// - Throws: `SessionFactoryError` on the first call.
+    private static func sessionAfterAFirstFailure(
+        callCount: CallCounter,
+        session: any AgentSession
+    ) throws -> any AgentSession {
+        if callCount.increment() == 1 {
+            throw SessionFactoryError()
+        }
+        return session
     }
 
     // MARK: - One prompt that picks

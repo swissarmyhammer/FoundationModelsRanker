@@ -37,6 +37,44 @@ comments:
     - No file was changed in this step.
     - next: review.
   timestamp: 2026-09-30T01:56:47.915118+00:00
+- actor: claude-code
+  id: 01m3r0v1xexpyzp0npc62gkkmg
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` (checkpoint cef362b). 2 findings, 2 confirmed, 0 refuted. Tests/FoundationModelsRankerTests/SelectionTests.swift:118 (swift/initialization), Tests/FoundationModelsRankerTests/Support/ScriptedAgentSession.swift:193 (code-hygiene/magic-numbers-swift).
+    - next: Correct the 2 open findings in the "Review Findings (2026-09-29 19:57)" section. Then do the review again. The CI item needs a push. The push is a step for the user. The review does not record the push as a finding.
+  timestamp: 2026-09-30T02:03:33.678191+00:00
+- actor: claude-code
+  id: 01m3r0vfq1v21epkwyf6f8e8f0
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 13 files
+    - test: green — swift test, 292 passed; IntegrationTests, 5 passed
+    - commit: cef362b
+    - review: findings — Tests/FoundationModelsRankerTests/SelectionTests.swift:118, Tests/FoundationModelsRankerTests/Support/ScriptedAgentSession.swift:193
+  timestamp: 2026-09-30T02:03:47.809051+00:00
+- actor: claude-code
+  id: 01m3r0y8mn2akxd9471emvnd3r
+  text: |-
+    Review findings corrected (not committed, not pushed).
+    - SelectionTests.swift: the factory closure of `aSearchAfterAFactoryErrorAwaitsTheFactoryAgain` now calls the new `private static func sessionAfterAFirstFailure(callCount:session:)`. The `if` is in that method. A scan of the whole file found no other callback closure that branches.
+    - ScriptedAgentSession.swift: `RecordingSessionFactory.delay` is now `.milliseconds(delayMilliseconds)`, with the new `static let delayMilliseconds = 20`. `swiftlint lint` with `only_rules: [no_magic_numbers]` and `allowed_numbers: [0, 1, -1, 100]` found 1 violation in the file before the change and 0 after. It also found 0 in SelectionTests.swift.
+    - The project has no `.swiftlint.yml`. To do the magic-number check again, use a temporary config with the rule settings above.
+  timestamp: 2026-09-30T02:05:18.869570+00:00
+- actor: claude-code
+  id: 01m3r0yakpdqqy4hcmxy9413r0
+  text: |-
+    ### implement — changed
+    - evidence: 2 files — Tests/FoundationModelsRankerTests/SelectionTests.swift, Tests/FoundationModelsRankerTests/Support/ScriptedAgentSession.swift. `swift test`: 292 tests in 22 suites passed, 0 failures, 0 warnings. swiftlint no_magic_numbers: 0 violations. Both findings are checked.
+    - next: /review. The push and the "CI is green" item stay open for the user.
+  timestamp: 2026-09-30T02:05:20.886532+00:00
+- actor: claude-code
+  id: 01m3r118p1nke235ef0fc7w5tz
+  text: |-
+    ### test — green
+    - evidence: `swift test` — 292 tests in 22 suites passed, 0 failed, 0 skipped, 0 warnings. `swift test --package-path IntegrationTests` — 5 tests in 5 suites passed, 0 failed, 0 skipped, 0 warnings.
+    - next: review
+  timestamp: 2026-09-30T02:06:57.217751+00:00
 position_column: doing
 position_ordinal: '80'
 title: Async session factory for the selection tier and the Searcher facade
@@ -68,3 +106,17 @@ Searcher(catalog, embedder: e, session: { instructions in try await qwen.session
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #model-pool
+
+## Review Findings (2026-09-29 19:57)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 11 file(s) reviewed, 6 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 2 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+> - `docs/GUIDE.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsRankerTests/SelectionTests.swift:118` `swift/initialization` — A callback closure that branches (contains an `if` statement) should extract its logic to a named method. The factory closure accepts branching logic inline, which makes it harder to test and understand the factory behavior separately. Extract the branching logic into a named test helper method and have the factory closure simply call that method. For example: `private func makeSessionOrThrow() throws -> any AgentSession { if factoryCallCount.increment() == 1 { throw SessionFactoryError() } return session }` and then `model: { _ in try self.makeSessionOrThrow() }`.
+- [x] `Tests/FoundationModelsRankerTests/Support/ScriptedAgentSession.swift:193` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.
