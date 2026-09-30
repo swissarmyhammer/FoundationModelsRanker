@@ -113,7 +113,7 @@ Searcher(catalog, embedder: e, session: { instructions in try await qwen.session
 - [x] A factory can `await` and `throw`; an error from the factory comes out of `search`.
 - [x] The factory is awaited one time for the cached root and one time for each over-budget run.
 - [x] A synchronous closure still compiles as a factory.
-- [ ] CI is green on the pushed commit.
+- [x] CI is green on the pushed commit.
 
 ## Tests
 - [x] `Tests/FoundationModelsRankerTests/` selection tests: an async factory with a delay is awaited for the root and for each run; a throwing factory makes `search` throw.

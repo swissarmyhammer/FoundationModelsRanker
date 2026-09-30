@@ -84,7 +84,7 @@ let e: any TextEmbedding = PooledEmbedder(ref: "mlx-community/Qwen3-Embedding-0.
 ## Acceptance Criteria
 - [x] `PooledSession` is an `AgentSession` and `PooledEmbedder` is a `TextEmbedding` with no consumer code.
 - [x] The cached-root path forks the pooled session (it does not send the prefix again).
-- [ ] CI is green on the pushed commit.
+- [x] CI is green on the pushed commit.
 
 ## Tests
 - [x] `Tests/FoundationModelsRankerTests/PooledConformanceTests.swift`: with `ModelPool(loader:)` and a stub `LanguageModel`, a `SelectionTier` over a `PooledModel` factory selects ids, and a fork is used for each query; a `HybridRanker` with a `PooledEmbedder` on a test loader reports cosine.
