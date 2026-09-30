@@ -41,11 +41,27 @@ comments:
     - warnings: No warning comes from a file in this repository. Each run shows one warning from SwiftPM: "missing creator for mutated node ... mlx-swift_Cmlx.bundle/Contents/MacOS". It comes from the mlx-swift dependency. No dependency code was changed.
     - next: review.
   timestamp: 2026-09-30T05:12:12.084488+00:00
+- actor: claude-code
+  id: 01m3rbvr0kxj1b2nr8ey3w2fqt
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (checkpoint 71adff3). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. The engine did not review README.md and docs/GUIDE.md because no validator matches them.
+    - next: The acceptance item "CI is green on the pushed commit" is open. The user must push to origin main, and then CI must be green.
+  timestamp: 2026-09-30T05:16:10.643001+00:00
+- actor: claude-code
+  id: 01m3rbw1d8v9fh3tghs549egvd
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 13 files
+    - test: green — swift test, 298 passed; IntegrationTests, 5 passed
+    - commit: 71adff3
+    - review: clean — 0 findings
+  timestamp: 2026-09-30T05:16:20.264610+00:00
 depends_on:
 - 01M3QMD9KJ8T723R02085BEFYY
 - 01M3QMD9X40XA640Z9CXCREQAM
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: b080
 title: Depend on Extras; PooledSession is an AgentSession and PooledEmbedder is a TextEmbedding
 ---
 **Wait for:** FoundationModelsExtras tasks 01M3QMD8KBM42ZRNF447E06VVC ("PooledEmbedder from a Hugging Face name") and 01M3QMD98E12JEEZGKAVZB8CXN ("PooledModel and PooledSession for an LLM by Hugging Face name") on the Extras board: done and pushed.
