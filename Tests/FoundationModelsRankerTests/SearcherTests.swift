@@ -487,11 +487,12 @@ struct SearcherTests {
     // MARK: - Degradation: the query vector and the item vectors differ in length
 
     @Test
-    func aQueryVectorOfADifferentLengthScoresZeroCosineAndKeepsKeywordRetrieval() async throws {
+    func aQueryVectorOfADifferentLengthDegradesToKeywordOnlyRetrievalAndReportsTheDiagnosticOncePerSearch() async throws {
         // The protocol declares no vector length, so only the vectors that
         // `embed(_:)` returns tell their length. When the query vector and
-        // the item vectors do not agree, each item gets a cosine of zero.
-        // The query embed did not fail, so no diagnostic is reported.
+        // the item vectors do not agree, cosine cannot score the items. The
+        // search skips the cosine signal, keeps keyword retrieval, and
+        // reports `.embeddingUnavailable` one time.
         let recorder = DiagnosticRecorder()
         let searcher = try await Searcher(
             Self.toolItems,
@@ -511,7 +512,7 @@ struct SearcherTests {
         let signals = try #require(first.signals)
         #expect(signals.bm25 > 0.0)
         #expect(matches.allSatisfy { $0.signals?.cosine == 0.0 })
-        #expect(recorder.diagnostics.isEmpty)
+        #expect(recorder.diagnostics == [.embeddingUnavailable])
     }
 
     // MARK: - Degradation: a zeroed cosine weight is an opt-out, not a failure

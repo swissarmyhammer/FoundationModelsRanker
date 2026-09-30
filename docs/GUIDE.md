@@ -105,5 +105,9 @@ Every fallback is reported. No fallback is silent:
 
 - No `embedder`, or a query embed that fails, drops to keyword-only retrieval
   and reports `.embeddingUnavailable` through `onDiagnostic`.
+- A query vector with a length different from the stored item vectors also
+  drops that search to keyword-only retrieval and reports
+  `.embeddingUnavailable`. This applies to `Searcher` and to
+  `StreamingSearchCorpus`.
 - `mode: .selection` with no session throws `SelectionTierUnavailable`.
 - `mode: .auto` with no session uses retrieval and does not fail.

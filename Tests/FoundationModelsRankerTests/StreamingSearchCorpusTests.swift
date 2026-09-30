@@ -63,6 +63,13 @@ struct StreamingSearchCorpusTests {
     /// call directly after the first search's.
     static let secondStreamedQueryEmbedCall = firstStreamedQueryEmbedCall + 1
 
+    /// The length of each item vector that a batched `add(items:)` call
+    /// stores.
+    static let itemVectorLength = 8
+
+    /// A query vector length that differs from `itemVectorLength`.
+    static let mismatchedQueryVectorLength = 4
+
     /// Builds a corpus the way a streaming producer fills one -- `runAItems`
     /// added one item for each `add(items:)` call, never as one batch -- so
     /// the item embeds take calls 1 through `runAItems.count` and
@@ -570,6 +577,32 @@ struct StreamingSearchCorpusTests {
         // The recovered search reported nothing of its own: the degradation
         // ended with the search whose query embed threw.
         #expect(recorder.diagnostics.filter { $0 == .embeddingUnavailable }.count == 1)
+    }
+
+    // MARK: - Degradation: the query vector and the item vectors differ in length
+
+    /// The streaming corpus's own copy of the length check. `add(items:)`
+    /// embeds all of `runAItems` in one batched call, so each stored item
+    /// vector has `itemVectorLength` values. Each search embeds its query as
+    /// one text, so the query vector has `mismatchedQueryVectorLength`
+    /// values. Cosine cannot compare vectors of different lengths, so the
+    /// search skips the cosine signal and reports `.embeddingUnavailable`.
+    @Test
+    func aQueryVectorOfADifferentLengthDegradesTheStreamingSearchToKeywordOnlyAndReportsTheDiagnosticOncePerSearch() async {
+        let recorder = DiagnosticRecorder()
+        let embedder = MismatchedLengthEmbedder(
+            batchVectorLength: Self.itemVectorLength,
+            singleTextVectorLength: Self.mismatchedQueryVectorLength
+        )
+        let actorCorpus = StreamingSearchCorpus(embedder: embedder, onDiagnostic: { recorder.record($0) })
+        await actorCorpus.add(items: Self.runAItems)
+
+        let matches = await actorCorpus.search("the parser failed to tokenize the config file", limit: 10)
+
+        #expect(matches.first?.id == "a1")
+        #expect((matches.first?.signals?.bm25 ?? 0.0) > 0.0)
+        #expect(matches.allSatisfy { $0.signals?.cosine == 0.0 })
+        #expect(recorder.diagnostics == [.embeddingUnavailable])
     }
 
     /// With an embedder configured, `add(items:)`/`search(_:limit:)` each

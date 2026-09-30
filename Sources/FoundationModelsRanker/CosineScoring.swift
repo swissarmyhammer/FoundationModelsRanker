@@ -142,4 +142,24 @@ public enum CosineScoring {
         guard queryMagnitudeSquared > 0.0, targetMagnitudeSquared > 0.0 else { return 0.0 }
         return Double(dotProduct / (queryMagnitudeSquared.squareRoot() * targetMagnitudeSquared.squareRoot()))
     }
+
+    /// Scores `query` against each vector in `targets` with
+    /// `cosineSimilarity(_:_:)`, but only when each target has the same
+    /// length as `query`.
+    ///
+    /// `cosineSimilarity(_:_:)` gives `0.0` for two vectors of different
+    /// lengths. That `0.0` looks the same as a real score of `0.0`, so a
+    /// caller cannot see the problem. This function gives `nil` for that
+    /// case. The caller can then skip the cosine signal and report it.
+    ///
+    /// - Parameters:
+    ///   - query: the vector to compare with each target.
+    ///   - targets: the vectors to score, in order.
+    /// - Returns: one score for each target, in the order of `targets`, or
+    ///   `nil` when the length of one or more targets is different from the
+    ///   length of `query`.
+    static func similarities(of query: [Float], to targets: [[Float]]) -> [Double]? {
+        guard targets.allSatisfy({ $0.count == query.count }) else { return nil }
+        return targets.map { cosineSimilarity(query, $0) }
+    }
 }

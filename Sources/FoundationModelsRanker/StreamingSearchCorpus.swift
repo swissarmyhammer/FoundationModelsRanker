@@ -298,8 +298,9 @@ public actor StreamingSearchCorpus {
     /// embedded yet (only possible if an earlier `add(items:)`'s embed call
     /// failed -- a completed `add(items:)` always leaves every one of its
     /// new rows embedded when `embedder` is configured and the call
-    /// succeeds), or embedding the query itself fails. The embedder/
-    /// row-completeness check runs before embedding `query`, so a search
+    /// succeeds), embedding the query itself fails, or the query vector
+    /// length is different from the length of a stored row vector. The
+    /// embedder/row-completeness check runs before embedding `query`, so a search
     /// that's already known to be unable to use cosine never pays for a
     /// wasted query-embed call.
     ///
@@ -326,10 +327,13 @@ public actor StreamingSearchCorpus {
             itemVectors.append(vector)
         }
 
-        guard let queryVector = try? await embedder.embed([query]).first else {
+        guard
+            let queryVector = try? await embedder.embed([query]).first,
+            let scores = CosineScoring.similarities(of: queryVector, to: itemVectors)
+        else {
             onDiagnostic(.embeddingUnavailable)
             return nil
         }
-        return itemVectors.map { CosineScoring.cosineSimilarity(queryVector, $0) }
+        return scores
     }
 }

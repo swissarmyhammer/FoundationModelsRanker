@@ -58,7 +58,8 @@ import FoundationModels
 /// factory front door when each call must get a fresh context.
 ///
 /// Degradation is graceful, never silent: no `embedder` (or
-/// a query embed that itself fails) drops straight to keyword-only
+/// a query embed that itself fails, or a query vector whose length is
+/// different from the item vectors) drops straight to keyword-only
 /// retrieval with `.embeddingUnavailable` reported via `onDiagnostic` on
 /// every such search. A `weights.cosine` of `0.0` is different -- a
 /// caller's deliberate opt-out of the signal, not a degradation -- so it
@@ -395,8 +396,9 @@ private struct RetrievalEngine: Sendable {
     /// doesn't want the signal" rule. Otherwise, degrades to `nil`
     /// (keyword-only) and *does* report `.embeddingUnavailable` whenever
     /// cosine was actually wanted but couldn't contribute: no
-    /// `embedder`/`itemEmbeddings` available, or embedding the query
-    /// itself fails -- mirrors `MetadataSearcher
+    /// `embedder`/`itemEmbeddings` available, embedding the query
+    /// itself fails, or the query vector length is different from the
+    /// length of an item vector -- mirrors `MetadataSearcher
     /// .computeCosineRanking`'s degradation, generalized to FoundationModelsRanker's
     /// `HybridRanker` seam.
     ///
@@ -409,11 +411,14 @@ private struct RetrievalEngine: Sendable {
             onDiagnostic(.embeddingUnavailable)
             return nil
         }
-        guard let queryVector = try? await embedder.embed([query]).first else {
+        guard
+            let queryVector = try? await embedder.embed([query]).first,
+            let scores = CosineScoring.similarities(of: queryVector, to: itemEmbeddings)
+        else {
             onDiagnostic(.embeddingUnavailable)
             return nil
         }
-        return itemEmbeddings.map { CosineScoring.cosineSimilarity(queryVector, $0) }
+        return scores
     }
 
     /// `.retrieval` mode's answer: short-circuits an empty corpus, resolves

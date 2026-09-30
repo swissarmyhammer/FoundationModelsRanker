@@ -39,7 +39,8 @@ public enum RankDiagnostic: Sendable, Equatable {
     case unknownSelectedId(id: String)
 
     /// No embedder is configured for the cosine signal (or embedding the
-    /// query itself failed), so retrieval degraded to keyword-only (BM25 +
-    /// trigram) for this search.
+    /// query itself failed, or the query vector length is different from
+    /// the length of an item vector), so retrieval degraded to keyword-only
+    /// (BM25 + trigram) for this search.
     case embeddingUnavailable
 }

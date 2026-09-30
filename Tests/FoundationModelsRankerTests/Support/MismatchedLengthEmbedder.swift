@@ -4,9 +4,11 @@ import FoundationModelsRanker
 /// A `TextEmbedding` test double that gives a batch of texts vectors of one
 /// length, and a single text a vector of a different length.
 ///
-/// `Searcher` embeds all its items in one batched call at `init`, and it
-/// embeds each query as a single text. Thus this double makes the query
-/// vector and the item vectors differ in length. The protocol declares no
+/// `Searcher` embeds all its items in one batched call at `init`, and
+/// `StreamingSearchCorpus` embeds the items of one `add(items:)` call in one
+/// batched call. Both embed each query as a single text. Thus this double
+/// makes the query vector and the item vectors differ in length, when more
+/// than one item is embedded in each batch. The protocol declares no
 /// vector length, so the length that `embed(_:)` returns is the only length
 /// a caller can see. This double lets a test show what the cosine signal
 /// does when those lengths do not agree.

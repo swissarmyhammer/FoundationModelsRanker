@@ -75,8 +75,24 @@ comments:
     - evidence: `swift test` — 292 tests in 22 suites passed, 0 failed, 0 skipped, 0 warnings. `swift test --package-path IntegrationTests` — 5 tests in 5 suites passed, 0 failed, 0 skipped, 0 warnings.
     - next: review
   timestamp: 2026-09-30T02:06:57.217751+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m3r141fwzkzvhtgctaqpcnca
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (5e93f7a). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. 2 files reviewed. The 2 .kanban/ files are excluded by .reviewignore. The 2 prior findings are checked.
+    - next: The task is in done. The acceptance item "CI is green on the pushed commit" stays open. The user must push to origin main, then examine CI.
+  timestamp: 2026-09-30T02:08:28.156969+00:00
+- actor: claude-code
+  id: 01m3r14gaxp0wyn1nbbwydq7gm
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 2 files
+    - test: green — swift test, 292 passed; IntegrationTests, 5 passed
+    - commit: 5e93f7a
+    - review: clean — 0 findings
+  timestamp: 2026-09-30T02:08:43.357437+00:00
+position_column: done
+position_ordinal: ae80
 title: Async session factory for the selection tier and the Searcher facade
 ---
 ## What
