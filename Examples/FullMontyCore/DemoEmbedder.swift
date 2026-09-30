@@ -39,34 +39,35 @@ import FoundationModelsRanker
 /// wanting real semantics supplies its own `TextEmbedding` conformer, which
 /// is the seam this example exists to show.
 public struct DemoEmbedder: TextEmbedding {
-    /// The vector length `init(dimension:)` uses when the caller names none.
+    /// The vector length `init(vectorLength:)` uses when the caller names
+    /// none.
     ///
     /// Large enough that the ~50-item `toolCatalog` and its queries collide
     /// in few buckets, small enough that embedding the whole catalog stays
     /// instant.
-    public static let defaultDimension = 256
+    public static let defaultVectorLength = 256
 
     /// The length of every vector this embedder produces.
     ///
-    /// Never negative: `init(dimension:)` clamps, mirroring
+    /// Never negative: `init(vectorLength:)` clamps, mirroring
     /// `SelectionConfig`'s own treatment of its budgets.
-    public let dimension: Int
+    private let vectorLength: Int
 
-    /// Creates an embedder that hashes trigrams into `dimension` buckets.
+    /// Creates an embedder that hashes trigrams into `vectorLength` buckets.
     ///
-    /// - Parameter dimension: the length of every vector this embedder
-    ///   produces. Defaults to `defaultDimension`. A negative value is
+    /// - Parameter vectorLength: the length of every vector this embedder
+    ///   produces. Defaults to `defaultVectorLength`. A negative value is
     ///   clamped to `0`, which makes every vector empty.
-    public init(dimension: Int = DemoEmbedder.defaultDimension) {
-        self.dimension = max(0, dimension)
+    public init(vectorLength: Int = DemoEmbedder.defaultVectorLength) {
+        self.vectorLength = max(0, vectorLength)
     }
 
     /// Embeds each text as a unit-length hashed bag of its character
     /// trigrams.
     ///
     /// - Parameter texts: the texts to embed.
-    /// - Returns: one `dimension`-length vector per text, in the same order
-    ///   as `texts`.
+    /// - Returns: one vector of `vectorLength` components per text, in the
+    ///   same order as `texts`.
     public func embed(_ texts: [String]) async throws -> [[Float]] {
         texts.map(vector(forText:))
     }
@@ -75,27 +76,27 @@ public struct DemoEmbedder: TextEmbedding {
     /// its stable hash names, then normalized to unit length.
     ///
     /// A text of fewer than 3 characters has no trigram, so its vector
-    /// stays all zeros -- `dimension` long, like every other, and scoring
+    /// stays all zeros -- `vectorLength` long, like every other, and scoring
     /// zero against everything.
     private func vector(forText text: String) -> [Float] {
-        guard dimension > 0 else { return [] }
+        guard vectorLength > 0 else { return [] }
 
-        var components = [Float](repeating: 0, count: dimension)
+        var components = [Float](repeating: 0, count: vectorLength)
         for trigram in Tokenizer.charTrigrams(text: text) {
-            components[Self.bucket(forTrigram: trigram, dimension: dimension)] += 1
+            components[Self.bucket(forTrigram: trigram, bucketCount: vectorLength)] += 1
         }
         return Self.normalized(components)
     }
 
     /// The component `trigram` adds to: its stable hash, folded into
-    /// `0..<dimension`.
+    /// `0..<bucketCount`.
     ///
     /// - Parameters:
     ///   - trigram: the trigram to place.
-    ///   - dimension: the number of buckets. Must be greater than `0`.
+    ///   - bucketCount: the number of buckets. Must be greater than `0`.
     /// - Returns: the index of `trigram`'s component.
-    private static func bucket(forTrigram trigram: String, dimension: Int) -> Int {
-        Int(fnv1aHash(ofText: trigram) % UInt64(dimension))
+    private static func bucket(forTrigram trigram: String, bucketCount: Int) -> Int {
+        Int(fnv1aHash(ofText: trigram) % UInt64(bucketCount))
     }
 
     /// Scales `components` to unit length, or returns them unchanged when

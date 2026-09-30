@@ -6,26 +6,28 @@ import FoundationModelsRanker
 /// The same input text always produces the same L2-normalized vector,
 /// derived from a stable FNV-1a hash of the text (not Swift's per-process
 /// `Hasher`, which is seed-randomized), so tests can assert on embedding
-/// determinism without a real model or GPU. `dimension` is configurable so
-/// tests can exercise dimension-sensitive callers, and an optional injected
-/// failure lets tests exercise a caller's graceful-skip path. Ported from
-/// CodeContextKit's `Tests/CodeContextKitTests/Support/FakeEmbedder.swift`.
+/// determinism without a real model or GPU. The vector length is
+/// configurable so tests can exercise callers that read the length of the
+/// vectors, and an optional injected failure lets tests exercise a caller's
+/// graceful-skip path. Ported from CodeContextKit's
+/// `Tests/CodeContextKitTests/Support/FakeEmbedder.swift`.
 struct FakeEmbedder: TextEmbedding {
-    let dimension: Int
+    /// The length of every vector this embedder produces.
+    private let vectorLength: Int
 
     /// When set, every call to `embed(_:)` throws this error instead of
     /// producing vectors.
     private let failure: (any Error)?
 
     /// Creates a fake embedder that deterministically hashes text into
-    /// vectors of `dimension` length.
+    /// vectors of `vectorLength` length.
     ///
     /// - Parameters:
-    ///   - dimension: The length of every vector this embedder produces.
+    ///   - vectorLength: The length of every vector this embedder produces.
     ///   - failure: When non-nil, `embed(_:)` throws this error instead of
     ///     computing vectors. Defaults to `nil`.
-    init(dimension: Int, failure: (any Error)? = nil) {
-        self.dimension = dimension
+    init(vectorLength: Int, failure: (any Error)? = nil) {
+        self.vectorLength = vectorLength
         self.failure = failure
     }
 
@@ -33,18 +35,18 @@ struct FakeEmbedder: TextEmbedding {
         if let failure {
             throw failure
         }
-        return texts.map { text in Self.vector(forText: text, dimension: dimension) }
+        return texts.map { text in Self.vector(forText: text, vectorLength: vectorLength) }
     }
 
     /// Deterministically derives an L2-normalized vector from `text`'s
     /// stable hash.
-    private static func vector(forText text: String, dimension: Int) -> [Float] {
-        guard dimension > 0 else {
+    private static func vector(forText text: String, vectorLength: Int) -> [Float] {
+        guard vectorLength > 0 else {
             return []
         }
 
         var generator = SplitMix64(seed: fnv1aHash(ofText: text))
-        var components = (0..<dimension).map { _ in Float.random(in: -1...1, using: &generator) }
+        var components = (0..<vectorLength).map { _ in Float.random(in: -1...1, using: &generator) }
         let magnitude = sqrt(components.reduce(Float(0)) { partial, component in partial + component * component })
         if magnitude > 0 {
             for index in components.indices {

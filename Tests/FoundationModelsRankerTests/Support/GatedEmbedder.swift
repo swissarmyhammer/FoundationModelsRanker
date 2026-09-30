@@ -19,21 +19,18 @@ import os
 /// synchronize on exactly which call has started via
 /// `waitUntilEntered(callNumber:)`.
 final class GatedEmbedder: TextEmbedding, Sendable {
-    let dimension: Int
-
     private let fake: FakeEmbedder
     private let releaseGate = OpenForeverGate()
     private let enteredGate = CountingGate()
 
     /// Creates a gated embedder that deterministically hashes text into
-    /// vectors of `dimension` length, exactly like `FakeEmbedder`, once
+    /// vectors of `vectorLength` length, exactly like `FakeEmbedder`, once
     /// released.
     ///
-    /// - Parameter dimension: the length of every vector this embedder
+    /// - Parameter vectorLength: the length of every vector this embedder
     ///   produces.
-    init(dimension: Int) {
-        self.dimension = dimension
-        fake = FakeEmbedder(dimension: dimension)
+    init(vectorLength: Int) {
+        fake = FakeEmbedder(vectorLength: vectorLength)
     }
 
     /// Records this call as "entered" (for `waitUntilEntered(callNumber:)`

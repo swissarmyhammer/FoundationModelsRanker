@@ -22,20 +22,16 @@ import FoundationModelsRanker
 /// path alone, and the single-text passthrough here is a correctness
 /// property of this double (not exercised by that particular test).
 final class MismatchedCountEmbedder: TextEmbedding, Sendable {
-    /// The length of every vector this embedder produces.
-    let dimension: Int
-
     private let fake: FakeEmbedder
 
     /// Creates a mismatched-count embedder that deterministically hashes
-    /// text into vectors of `dimension` length, exactly like
+    /// text into vectors of `vectorLength` length, exactly like
     /// `FakeEmbedder`, whenever it returns the correct count.
     ///
-    /// - Parameter dimension: the length of every vector this embedder
+    /// - Parameter vectorLength: the length of every vector this embedder
     ///   produces.
-    init(dimension: Int) {
-        self.dimension = dimension
-        fake = FakeEmbedder(dimension: dimension)
+    init(vectorLength: Int) {
+        fake = FakeEmbedder(vectorLength: vectorLength)
     }
 
     /// Embeds `texts` normally (deterministically, via `FakeEmbedder`) for

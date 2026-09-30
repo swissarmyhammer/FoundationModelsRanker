@@ -33,7 +33,8 @@ let searcher = try await Searcher(items, session: { instructions in
 
 ## Bring your own embedder
 
-`TextEmbedding` is `dimension` and `embed(_:)`. Nothing else. Write a
+`TextEmbedding` is `embed(_:)`. Nothing else. Each vector carries its own
+length, so an embedder does not declare one. Write a
 conformer around your own embedding backend and give it to `Searcher` as
 `embedder:`. Cosine similarity then joins the fused ranking. This package
 ships no embedder of its own, and every embedding backend connects the same
@@ -43,9 +44,6 @@ way:
 import FoundationModelsRanker
 
 struct MyEmbedder: TextEmbedding {
-    /// The length of every vector `myBackend` makes.
-    let dimension = 768
-
     /// Gives the texts to your own embedding backend.
     func embed(_ texts: [String]) async throws -> [[Float]] {
         try await myBackend.embed(texts)

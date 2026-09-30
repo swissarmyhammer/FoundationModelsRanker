@@ -12,7 +12,7 @@ struct EmbeddingSeamTests {
 
     @Test
     func fakeEmbedderProducesTheSameVectorForTheSameTextEveryCall() async throws {
-        let embedder = FakeEmbedder(dimension: 16)
+        let embedder = FakeEmbedder(vectorLength: 16)
 
         let first = try await embedder.embed(["func add() {}"])
         let second = try await embedder.embed(["func add() {}"])
@@ -22,7 +22,7 @@ struct EmbeddingSeamTests {
 
     @Test
     func fakeEmbedderProducesDifferentVectorsForDifferentText() async throws {
-        let embedder = FakeEmbedder(dimension: 16)
+        let embedder = FakeEmbedder(vectorLength: 16)
 
         let vectors = try await embedder.embed(["func add() {}", "func subtract() {}"])
 
@@ -30,8 +30,8 @@ struct EmbeddingSeamTests {
     }
 
     @Test
-    func fakeEmbedderProducesL2NormalizedVectorsOfTheConfiguredDimension() async throws {
-        let embedder = FakeEmbedder(dimension: 12)
+    func fakeEmbedderProducesL2NormalizedVectorsOfTheConfiguredLength() async throws {
+        let embedder = FakeEmbedder(vectorLength: 12)
 
         let vectors = try await embedder.embed(["func add() {}", "struct Sample {}"])
 
@@ -44,7 +44,7 @@ struct EmbeddingSeamTests {
 
     @Test
     func fakeEmbedderThrowsTheInjectedFailureInsteadOfProducingVectors() async throws {
-        let embedder = FakeEmbedder(dimension: 8, failure: SampleError())
+        let embedder = FakeEmbedder(vectorLength: 8, failure: SampleError())
 
         await #expect(throws: SampleError.self) {
             _ = try await embedder.embed(["func add() {}"])

@@ -20,9 +20,9 @@ import Testing
 struct DemoEmbedderTests {
     // MARK: - Shape
 
-    @Test("embed(_:) returns one vector per input, each of the configured dimension")
-    func embedReturnsOneVectorPerInputOfTheConfiguredDimension() async throws {
-        let embedder = DemoEmbedder(dimension: 16)
+    @Test("embed(_:) returns one vector per input, each of the configured length")
+    func embedReturnsOneVectorPerInputOfTheConfiguredLength() async throws {
+        let embedder = DemoEmbedder(vectorLength: 16)
 
         let vectors = try await embedder.embed(["record staged changes", "list a branch", "watch a directory"])
 
@@ -34,7 +34,7 @@ struct DemoEmbedderTests {
 
     @Test("embed(_:) returns the vectors in input order")
     func embedReturnsTheVectorsInInputOrder() async throws {
-        let embedder = DemoEmbedder(dimension: 16)
+        let embedder = DemoEmbedder(vectorLength: 16)
 
         let batch = try await embedder.embed(["record staged changes", "watch a directory"])
         let first = try await embedder.embed(["record staged changes"])
@@ -48,9 +48,11 @@ struct DemoEmbedderTests {
         #expect(first[0] != second[0])
     }
 
-    @Test("The default dimension is 256")
-    func theDefaultDimensionIs256() {
-        #expect(DemoEmbedder().dimension == 256)
+    @Test("With no length given, embed(_:) returns vectors of length 256")
+    func theDefaultVectorLengthIs256() async throws {
+        let vector = try #require(try await DemoEmbedder().embed(["record staged changes"]).first)
+
+        #expect(vector.count == 256)
     }
 
     // MARK: - Determinism
@@ -67,12 +69,12 @@ struct DemoEmbedderTests {
 
     // The vector below was computed outside this process, from the
     // documented algorithm: lowercase the text, take each sliding
-    // 3-character window, add 1 at `FNV-1a(window) % dimension`, then
+    // 3-character window, add 1 at `FNV-1a(window) % vectorLength`, then
     // normalize. A `String.hashValue` or `Hasher` embedder is seeded for
     // each process and could not reproduce it twice, let alone here.
     @Test("The checked-in expected vector proves the hash is process-independent")
     func theCheckedInExpectedVectorProvesTheHashIsProcessIndependent() async throws {
-        let embedder = DemoEmbedder(dimension: 8)
+        let embedder = DemoEmbedder(vectorLength: 8)
         let expected: [Float] = [
             0.18257418, 0.0, 0.18257418, 0.18257418, 0.54772252, 0.54772252, 0.54772252, 0.0,
         ]

@@ -270,7 +270,7 @@ struct StreamingSearchCorpusTests {
 
     @Test
     func eachAddedItemIsEmbeddedExactlyOnceAtAddTimeAndOnlyTheQueryIsEmbeddedPerSearch() async {
-        let embedder = CountingEmbedder(dimension: 8)
+        let embedder = CountingEmbedder(vectorLength: 8)
         let actorCorpus = StreamingSearchCorpus(embedder: embedder)
 
         await actorCorpus.add(items: [Self.runAItems[0]])
@@ -290,7 +290,7 @@ struct StreamingSearchCorpusTests {
 
     @Test
     func cosineParticipatesInRankingImmediatelyAfterAddWithAnEmbedderConfigured() async throws {
-        let embedder = FakeEmbedder(dimension: 8)
+        let embedder = FakeEmbedder(vectorLength: 8)
         let actorCorpus = StreamingSearchCorpus(embedder: embedder)
         await actorCorpus.add(items: Self.runAItems)
 
@@ -309,7 +309,7 @@ struct StreamingSearchCorpusTests {
 
     @Test
     func removingAnItemDropsItsEmbeddingSoALaterCompleteReembedIsUnaffectedByItsStaleVector() async throws {
-        let embedder = FakeEmbedder(dimension: 8)
+        let embedder = FakeEmbedder(vectorLength: 8)
         let actorCorpus = StreamingSearchCorpus(embedder: embedder)
         await actorCorpus.add(items: Self.runAItems)
         await actorCorpus.remove(ids: ["a1"])
@@ -340,7 +340,7 @@ struct StreamingSearchCorpusTests {
         // stale-write race `ifTextMatches:` guards against -- see
         // `aStaleInFlightEmbedForAResurrectedIDNeverOverwritesItsFreshVector`
         // for that.)
-        let embedder = CountingEmbedder(dimension: 8)
+        let embedder = CountingEmbedder(vectorLength: 8)
         let actorCorpus = StreamingSearchCorpus(embedder: embedder)
         let originalText = "original text about parsing config"
         let freshText = "a completely different replacement about network requests"
@@ -382,7 +382,7 @@ struct StreamingSearchCorpusTests {
     /// corrupting cosine for `"x"` from then on with no diagnostic.
     @Test
     func aStaleInFlightEmbedForAResurrectedIDNeverOverwritesItsFreshVector() async throws {
-        let embedder = GatedEmbedder(dimension: 8)
+        let embedder = GatedEmbedder(vectorLength: 8)
         let actorCorpus = StreamingSearchCorpus(embedder: embedder)
         let originalText = "original text about parsing config"
         let freshText = "a completely different replacement about network requests"
@@ -413,8 +413,8 @@ struct StreamingSearchCorpusTests {
         let match = try #require(matches.first { $0.id == "x" })
 
         // A plain (ungated) embedder produces identical vectors -- same
-        // deterministic hash, same dimension -- without re-parking.
-        let plainEmbedder = FakeEmbedder(dimension: 8)
+        // deterministic hash, same vector length -- without re-parking.
+        let plainEmbedder = FakeEmbedder(vectorLength: 8)
         let queryVector = try await plainEmbedder.embed([query])[0]
         let freshVector = try await plainEmbedder.embed([freshText])[0]
         let staleVector = try await plainEmbedder.embed([originalText])[0]
@@ -444,7 +444,7 @@ struct StreamingSearchCorpusTests {
     @Test
     func addWithAMismatchedVectorCountEmbedderLeavesItemsUnembeddedSoSearchDegradesToKeywordOnlyWithDiagnostic() async {
         let recorder = DiagnosticRecorder()
-        let embedder = MismatchedCountEmbedder(dimension: 8)
+        let embedder = MismatchedCountEmbedder(vectorLength: 8)
         let actorCorpus = StreamingSearchCorpus(embedder: embedder, onDiagnostic: { recorder.record($0) })
 
         await actorCorpus.add(items: Self.runAItems)
@@ -490,7 +490,7 @@ struct StreamingSearchCorpusTests {
     @Test
     func aFailedQueryEmbedDegradesTheStreamingSearchToKeywordOnlyAndReportsTheDiagnosticOncePerSearch() async {
         let recorder = DiagnosticRecorder()
-        let embedder = CountingEmbedder(dimension: 8, failingFromCall: Self.firstStreamedQueryEmbedCall)
+        let embedder = CountingEmbedder(vectorLength: 8, failingFromCall: Self.firstStreamedQueryEmbedCall)
         let actorCorpus = await Self.streamedRunACorpus(embedder: embedder, onDiagnostic: { recorder.record($0) })
 
         // Each item was embedded at add time, and every one of those calls
@@ -538,7 +538,7 @@ struct StreamingSearchCorpusTests {
         let query = "the parser failed to tokenize the config file"
         let recorder = DiagnosticRecorder()
         let embedder = CountingEmbedder(
-            dimension: 8,
+            vectorLength: 8,
             failingFromCall: Self.firstStreamedQueryEmbedCall,
             recoveringAtCall: Self.secondStreamedQueryEmbedCall
         )
@@ -555,10 +555,10 @@ struct StreamingSearchCorpusTests {
         // Every recovered match carries the real cosine of its own stored
         // vector against the query's, and at least one of them is non-zero --
         // the signal the degraded search above had to do without. A plain
-        // `FakeEmbedder` of the same dimension recomputes those vectors: it
+        // `FakeEmbedder` of the same vector length recomputes those vectors: it
         // is the deterministic embedder `CountingEmbedder` wraps.
         #expect(!recoveredMatches.isEmpty)
-        let plainEmbedder = FakeEmbedder(dimension: 8)
+        let plainEmbedder = FakeEmbedder(vectorLength: 8)
         let queryVector = try await plainEmbedder.embed([query])[0]
         for match in recoveredMatches {
             let item = try #require(Self.runAItems.first { $0.id == match.id })
@@ -585,7 +585,7 @@ struct StreamingSearchCorpusTests {
     /// neither crashes nor returns a torn match.
     @Test
     func concurrentAddSearchAndRemoveWithAnEmbedderConfiguredNeverCrashesOrReturnsATornMatch() async {
-        let embedder = FakeEmbedder(dimension: 8)
+        let embedder = FakeEmbedder(vectorLength: 8)
         let actorCorpus = StreamingSearchCorpus(embedder: embedder)
 
         let groupCount = 10

@@ -47,7 +47,10 @@ struct SearcherTests {
     }()
 
     /// The vector length every counting embedder in this suite produces.
-    private static let embeddingDimension = 8
+    private static let embeddingVectorLength = 8
+
+    /// A query vector length that differs from `embeddingVectorLength`.
+    private static let mismatchedQueryVectorLength = 4
 
     // MARK: - `.retrieval` mode: no session touched, real signals attached
 
@@ -107,7 +110,7 @@ struct SearcherTests {
     func selectionModeMakesOneModelCallAndNeverEmbedsTheQuery() async throws {
         // `init` embeds every item in one call. A selection search asks the
         // model once and embeds nothing, so the count stays at that one call.
-        let embedder = CountingEmbedder(dimension: Self.embeddingDimension)
+        let embedder = CountingEmbedder(vectorLength: Self.embeddingVectorLength)
         let session = ScriptedAgentSession([#"{"ids":["watch"]}"#])
         let recorder = DiagnosticRecorder()
         let searcher = try await Searcher(
@@ -175,7 +178,7 @@ struct SearcherTests {
 
     @Test
     func selectionModeOverBudgetNeverEmbedsTheQueryAndReportsNoDiagnostic() async throws {
-        let embedder = CountingEmbedder(dimension: Self.embeddingDimension)
+        let embedder = CountingEmbedder(vectorLength: Self.embeddingVectorLength)
         let recorder = DiagnosticRecorder()
         let searcher = try await Searcher(
             Self.bulkItems,
@@ -219,7 +222,7 @@ struct SearcherTests {
 
     @Test
     func autoModeWithASessionNeverEmbedsTheQueryOrReportsEmbeddingUnavailable() async throws {
-        let embedder = CountingEmbedder(dimension: Self.embeddingDimension)
+        let embedder = CountingEmbedder(vectorLength: Self.embeddingVectorLength)
         let recorder = DiagnosticRecorder()
         let searcher = try await Searcher(
             Self.toolItems,
@@ -404,7 +407,7 @@ struct SearcherTests {
         let recorder = DiagnosticRecorder()
         let searcher = try await Searcher(
             Self.toolItems,
-            embedder: FakeEmbedder(dimension: 8),
+            embedder: FakeEmbedder(vectorLength: 8),
             session: nil,
             mode: .retrieval,
             onDiagnostic: { recorder.record($0) }
@@ -428,7 +431,7 @@ struct SearcherTests {
         let recorder = DiagnosticRecorder()
         let searcher = try await Searcher(
             Self.toolItems,
-            embedder: CountingEmbedder(dimension: 8, failingFromCall: queryEmbedCallNumber),
+            embedder: CountingEmbedder(vectorLength: 8, failingFromCall: queryEmbedCallNumber),
             session: nil,
             mode: .retrieval,
             onDiagnostic: { recorder.record($0) }
@@ -445,6 +448,36 @@ struct SearcherTests {
         #expect(matches.first?.signals?.cosine == 0.0)
         // One search reports the degradation one time.
         #expect(recorder.diagnostics.filter { $0 == .embeddingUnavailable }.count == 1)
+    }
+
+    // MARK: - Degradation: the query vector and the item vectors differ in length
+
+    @Test
+    func aQueryVectorOfADifferentLengthScoresZeroCosineAndKeepsKeywordRetrieval() async throws {
+        // The protocol declares no vector length, so only the vectors that
+        // `embed(_:)` returns tell their length. When the query vector and
+        // the item vectors do not agree, each item gets a cosine of zero.
+        // The query embed did not fail, so no diagnostic is reported.
+        let recorder = DiagnosticRecorder()
+        let searcher = try await Searcher(
+            Self.toolItems,
+            embedder: MismatchedLengthEmbedder(
+                batchVectorLength: Self.embeddingVectorLength,
+                singleTextVectorLength: Self.mismatchedQueryVectorLength
+            ),
+            session: nil,
+            mode: .retrieval,
+            onDiagnostic: { recorder.record($0) }
+        )
+
+        let matches = try await searcher.search("search file contents with a regular expression", limit: 5)
+
+        let first = try #require(matches.first)
+        #expect(first.id == "grep")
+        let signals = try #require(first.signals)
+        #expect(signals.bm25 > 0.0)
+        #expect(matches.allSatisfy { $0.signals?.cosine == 0.0 })
+        #expect(recorder.diagnostics.isEmpty)
     }
 
     // MARK: - Degradation: a zeroed cosine weight is an opt-out, not a failure

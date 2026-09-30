@@ -193,12 +193,9 @@ struct ReadmeExampleTests {
 /// The embedder `README.md`'s "Bring your own embedder" section declares,
 /// kept here verbatim so the section is compiled and run, not just read.
 ///
-/// `dimension` and `embed(_:)` are the whole `TextEmbedding` contract, and
-/// the body gives the texts to the caller's own backend.
+/// `embed(_:)` is the whole `TextEmbedding` contract, and the body gives the
+/// texts to the caller's own backend.
 private struct MyEmbedder: TextEmbedding {
-    /// The length of every vector `myBackend` makes.
-    let dimension = 768
-
     /// Gives the texts to your own embedding backend.
     func embed(_ texts: [String]) async throws -> [[Float]] {
         try await myBackend.embed(texts)
@@ -209,7 +206,10 @@ private struct MyEmbedder: TextEmbedding {
 ///
 /// A reader puts their own model or service here. This suite puts
 /// `FakeEmbedder` here instead, because a real backend needs a model, a GPU,
-/// or a network call, and none of the three belongs in a unit test. Its
-/// length reads off `MyEmbedder` itself, so the README's declared
-/// `dimension` and the vectors this backend really makes cannot disagree.
-private let myBackend = FakeEmbedder(dimension: MyEmbedder().dimension)
+/// or a network call, and none of the three belongs in a unit test. Each
+/// vector carries its own length, so `MyEmbedder` declares no length.
+private let myBackend = FakeEmbedder(vectorLength: myBackendVectorLength)
+
+/// The length of every vector `myBackend` makes. It is the length of a
+/// common sentence-embedding model.
+private let myBackendVectorLength = 768

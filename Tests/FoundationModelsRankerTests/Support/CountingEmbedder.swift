@@ -24,7 +24,7 @@ struct CountingEmbedderFailure: Error, Equatable {}
 /// expected delta.
 ///
 /// The same count also selects which calls fail, which is what
-/// `FakeEmbedder(dimension:failure:)` cannot do: its `failure` throws on
+/// `FakeEmbedder(vectorLength:failure:)` cannot do: its `failure` throws on
 /// *every* call, so a caller that embeds at `init` never gets built. A caller
 /// that embeds more than once needs the later call to fail alone. `Searcher`
 /// is that caller: it embeds every item in call 1 at `init`, then embeds the
@@ -38,8 +38,6 @@ struct CountingEmbedderFailure: Error, Equatable {}
 /// caller constant and change nothing but the health of the embedder, and
 /// thus show that the caller keeps no memory of the failure.
 final class CountingEmbedder: TextEmbedding, Sendable {
-    let dimension: Int
-
     private let fake: FakeEmbedder
     private let callCountBox = OSAllocatedUnfairLock<Int>(initialState: 0)
 
@@ -52,7 +50,7 @@ final class CountingEmbedder: TextEmbedding, Sendable {
     private let recoveringAtCall: Int?
 
     /// Creates a counting embedder that deterministically hashes text into
-    /// vectors of `dimension` length, exactly like `FakeEmbedder`.
+    /// vectors of `vectorLength` length, exactly like `FakeEmbedder`.
     ///
     /// The two call numbers make a half-open window of the calls that fail:
     /// `failingFromCall` is the first failure, and `recoveringAtCall` is the
@@ -60,7 +58,7 @@ final class CountingEmbedder: TextEmbedding, Sendable {
     /// with no end.
     ///
     /// - Parameters:
-    ///   - dimension: the length of every vector this embedder produces.
+    ///   - vectorLength: the length of every vector this embedder produces.
     ///   - failingFromCall: the 1-indexed call number from which `embed(_:)`
     ///     throws `CountingEmbedderFailure` in place of vectors. Each earlier
     ///     call embeds normally. Defaults to `nil`, which never fails.
@@ -69,11 +67,10 @@ final class CountingEmbedder: TextEmbedding, Sendable {
     ///     Defaults to `nil`, which never recovers. Has no effect when
     ///     `failingFromCall` is `nil`, and no effect on a call before
     ///     `failingFromCall`, which succeeds anyway.
-    init(dimension: Int, failingFromCall: Int? = nil, recoveringAtCall: Int? = nil) {
-        self.dimension = dimension
+    init(vectorLength: Int, failingFromCall: Int? = nil, recoveringAtCall: Int? = nil) {
         self.failingFromCall = failingFromCall
         self.recoveringAtCall = recoveringAtCall
-        fake = FakeEmbedder(dimension: dimension)
+        fake = FakeEmbedder(vectorLength: vectorLength)
     }
 
     /// The number of times `embed(_:)` has been called so far.

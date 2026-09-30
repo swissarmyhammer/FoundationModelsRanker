@@ -1,8 +1,8 @@
 // Ported from CodeContextKit's
 // `Sources/CodeContextKit/Embedding/TextEmbedding.swift`. Lineage: Rust
 // `swissarmyhammer-search` crate -> CodeContextKit -> FoundationModelsRanker.
-// No behavior changes; the signature is byte-identical to both
-// existing copies.
+// One change from both older copies: this protocol has no `dimension`
+// requirement. `embed(_:)` is byte-identical to both.
 
 /// A seam for converting text into fixed-length embedding vectors.
 ///
@@ -10,17 +10,17 @@
 /// narrow protocol rather than a specific implementation: conformers embed
 /// a batch of texts; tests substitute a deterministic double. The caller
 /// supplies the conformer: this package ships no embedder of its own, and
-/// `dimension` and `embed(_:)` are the whole contract a caller writes
-/// against.
+/// `embed(_:)` is the whole contract a caller writes against.
+///
+/// The protocol declares no vector length. Each returned vector carries its
+/// own length, so an embedder that loads its model at the first call does
+/// not need to know that length before the call.
 public protocol TextEmbedding: Sendable {
-    /// The length of every embedding vector this embedder produces.
-    var dimension: Int { get }
-
-    /// Embeds each input string into a `dimension`-length vector, in order.
+    /// Embeds each input string into a vector, in order.
     ///
     /// - Parameter texts: The strings to embed.
-    /// - Returns: One `dimension`-length vector per input, in the same
-    ///   order as `texts`.
+    /// - Returns: One vector per input, in the same order as `texts`. All
+    ///   the vectors from one embedder have the same length.
     /// - Throws: If the underlying embedding computation fails.
     func embed(_ texts: [String]) async throws -> [[Float]]
 }

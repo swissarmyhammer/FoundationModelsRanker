@@ -54,11 +54,11 @@ import Testing
 }
 
 /// A `TextEmbedding` conformer written the way a caller writes one: against
-/// the public protocol, with nothing but `dimension` and `embed(_:)`.
+/// the public protocol, with nothing but `embed(_:)`.
 ///
 /// Deliberately not `FakeEmbedder` (`Support/FakeEmbedder.swift`). That
 /// double exists to give other suites deterministic vectors; this type
-/// exists to prove the protocol's two members are the whole contract, so it
+/// exists to prove the protocol's one member is the whole contract, so it
 /// stands beside the test that makes that claim and stays as small as the
 /// claim allows.
 ///
@@ -70,8 +70,6 @@ private struct VowelCountEmbedder: TextEmbedding {
     /// The vowels each vector component counts, one component per vowel.
     private static let countedVowels: [Character] = ["a", "e", "i", "o", "u"]
 
-    var dimension: Int { Self.countedVowels.count }
-
     func embed(_ texts: [String]) async throws -> [[Float]] {
         texts.map(Self.vector(forText:))
     }
@@ -80,7 +78,7 @@ private struct VowelCountEmbedder: TextEmbedding {
     /// unit length.
     ///
     /// - Parameter text: the text to embed.
-    /// - Returns: a `dimension`-length vector, of unit length unless `text`
+    /// - Returns: one component for each of `countedVowels`, of unit length unless `text`
     ///   holds no counted vowel at all, in which case every component is
     ///   zero.
     private static func vector(forText text: String) -> [Float] {
