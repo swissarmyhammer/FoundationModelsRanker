@@ -400,25 +400,17 @@ private struct RetrievalEngine: Sendable {
     /// itself fails, or the query vector length is different from the
     /// length of an item vector -- mirrors `MetadataSearcher
     /// .computeCosineRanking`'s degradation, generalized to FoundationModelsRanker's
-    /// `HybridRanker` seam.
+    /// `HybridRanker` seam. `CosineSignal.scores` does the embed, the
+    /// checks, and the report, the same as for `StreamingSearchCorpus`.
     ///
     /// - Parameter query: the query to embed and score.
     /// - Returns: one cosine score per `corpus.documents` entry, positionally
     ///   aligned, or `nil` to skip the cosine signal for this search.
     func cosineScores(forQuery query: String) async -> [Double]? {
         guard weights.cosine > 0.0 else { return nil }
-        guard let embedder, let itemEmbeddings else {
-            onDiagnostic(.embeddingUnavailable)
-            return nil
-        }
-        guard
-            let queryVector = try? await embedder.embed([query]).first,
-            let scores = CosineScoring.similarities(of: queryVector, to: itemEmbeddings)
-        else {
-            onDiagnostic(.embeddingUnavailable)
-            return nil
-        }
-        return scores
+        return await CosineSignal.scores(
+            forQuery: query, embedder: embedder, itemEmbeddings: itemEmbeddings, onDiagnostic: onDiagnostic
+        )
     }
 
     /// `.retrieval` mode's answer: short-circuits an empty corpus, resolves

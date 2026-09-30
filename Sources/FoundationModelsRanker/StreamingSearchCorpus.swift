@@ -299,10 +299,11 @@ public actor StreamingSearchCorpus {
     /// failed -- a completed `add(items:)` always leaves every one of its
     /// new rows embedded when `embedder` is configured and the call
     /// succeeds), embedding the query itself fails, or the query vector
-    /// length is different from the length of a stored row vector. The
-    /// embedder/row-completeness check runs before embedding `query`, so a search
-    /// that's already known to be unable to use cosine never pays for a
-    /// wasted query-embed call.
+    /// length is different from the length of a stored row vector.
+    /// `CosineSignal.scores` does the embed, the checks, and the report, the
+    /// same as for `Searcher`. It checks the embedder and the row vectors
+    /// before it embeds `query`, so a search that's already known to be
+    /// unable to use cosine never pays for a wasted query-embed call.
     ///
     /// - Parameters:
     ///   - query: the query to embed and score.
@@ -312,28 +313,10 @@ public actor StreamingSearchCorpus {
     ///   positionally aligned, or `nil` to skip the cosine signal for this
     ///   search.
     private func cosineScores(forQuery query: String, snapshot: SearchCorpus) async -> [Double]? {
-        guard let embedder else {
-            onDiagnostic(.embeddingUnavailable)
-            return nil
-        }
-
-        var itemVectors: [[Float]] = []
-        itemVectors.reserveCapacity(snapshot.ids.count)
-        for id in snapshot.ids {
-            guard let vector = snapshot.embedding(forID: id) else {
-                onDiagnostic(.embeddingUnavailable)
-                return nil
-            }
-            itemVectors.append(vector)
-        }
-
-        guard
-            let queryVector = try? await embedder.embed([query]).first,
-            let scores = CosineScoring.similarities(of: queryVector, to: itemVectors)
-        else {
-            onDiagnostic(.embeddingUnavailable)
-            return nil
-        }
-        return scores
+        let storedVectors = snapshot.ids.compactMap(snapshot.embedding(forID:))
+        let itemVectors = storedVectors.count == snapshot.ids.count ? storedVectors : nil
+        return await CosineSignal.scores(
+            forQuery: query, embedder: embedder, itemEmbeddings: itemVectors, onDiagnostic: onDiagnostic
+        )
     }
 }
