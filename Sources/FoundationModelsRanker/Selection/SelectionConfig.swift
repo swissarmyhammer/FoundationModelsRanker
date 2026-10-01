@@ -6,7 +6,8 @@
 // "API librarian"/"functions" domain language, since FoundationModelsRanker's catalog is
 // never assumed to be an API surface. Card ^zxm99zs then reworded the
 // default so a small model answers a query that a candidate serves; the
-// constant's doc comment records the measurement.
+// constant's doc comment records the measurement. Card ^knyvhkf then added
+// the paragraph that tells the model to copy each id exactly.
 //
 // A session factory takes only the instructions text. A caller that wants
 // guided generation applies its own grammar when it makes the session. A
@@ -29,8 +30,9 @@
 /// throw the catalog away and the model would never see it.
 public enum SelectionSessionSource: Sendable {
     /// Makes a new session for each assembled prefix. The prefix becomes the
-    /// session's instructions, so the prompt carries the intent alone, under
-    /// the `# Task` heading every prompt puts the intent under.
+    /// session's instructions, so the prompt carries only the request part:
+    /// the intent in the `<request>` block that every prompt puts the intent
+    /// in, and the line that asks for the exact ids.
     ///
     /// The factory can `await` and `throw`: a session can come from a pooled
     /// model that loads at the first request. An error from the factory
@@ -39,8 +41,7 @@ public enum SelectionSessionSource: Sendable {
     case factory(@Sendable (String) async throws -> any AgentSession)
 
     /// Reuses one supplied session. The tier forks the session for each
-    /// prompt, and the prefix rides above the `# Task` heading on each
-    /// prompt.
+    /// prompt, and the prefix rides above the request part of each prompt.
     case session(any AgentSession)
 }
 
@@ -75,8 +76,9 @@ public struct SelectionConfig: Sendable {
     public var preamble: String
 
     /// The assembled prefix's character budget. The budget measures the full
-    /// prefix text: the preamble, the `# Candidates` header, and one
-    /// `## <id>` heading above each candidate's summary block. At or under
+    /// prefix text: the preamble, and one `<candidate>` block for each
+    /// candidate, with an `id:` line and a `description:` line that holds
+    /// the candidate's summary block. At or under
     /// this budget, the cached-root + fork-per-call path runs with one
     /// prompt. Over it, the tier splits the catalog into runs whose prefix
     /// each fits this budget and sends one prompt per run
@@ -156,40 +158,40 @@ extension String {
     /// The selection guidance every `SelectionConfig` defaults its
     /// `preamble` to.
     ///
-    /// The text says what the candidates are, what an answer is, and when
-    /// an empty answer is right. It speaks of items and ids, never of
-    /// functions, because a catalog is never assumed to be an API surface.
-    /// It keeps the rule every earlier default carried:
-    /// "fewest that suffice, in call order when order matters."
+    /// The text has three paragraphs. The first says what the candidates
+    /// are and which candidates to choose. The second says that an answer
+    /// is the exact id of each chosen candidate. The third says when an
+    /// empty answer is correct. The text speaks of candidates and ids,
+    /// never of functions, because a catalog is never assumed to be an API
+    /// surface. It keeps the rule every earlier default carried: the fewest
+    /// candidates that suffice, in order of use when order matters.
     ///
-    /// **The text decides whether a small model answers at all, and it was
-    /// measured** (card `^zxm99zs`). The default that shipped before it read
-    /// "Given a task, return ONLY the items needed — fewest that suffice, in
-    /// call order when order matters. Do not invent ids; return an empty list
-    /// if nothing fits." Driven over a nine-function catalog (files read,
-    /// write, edit, patch, glob, grep; shell execute, getLines, grepHistory)
-    /// with the ten queries a consumer's agent asked, three rounds each:
+    /// **The exact-id paragraph (card `^knyvhkf`).** Each candidate entry of
+    /// the prefix is a `<candidate>` block with an `id:` line and a
+    /// `description:` line (`SelectionTier.assemblePrefix`). Before that,
+    /// each id was a `## <id>` heading, and no sentence told the model to
+    /// copy the id. A heading reads like a title, so a real model
+    /// (`mlx-community/Qwen3-4B-4bit`, and the on-device system model
+    /// before it) answered `"quantum-flux-capacitor"` for the id
+    /// `https://example.com/modules/quantum-flux-capacitor`. The tier then
+    /// dropped that answer as an unknown id. The second paragraph tells the
+    /// model to copy each id from its `id:` line, whole.
     ///
-    /// - `mlx-community/Qwen3-4B-4bit`, over the consumer's own catalog and
-    ///   grammar, answered 0 of 30 with the earlier default and 30 of 30 with
-    ///   this text. The consumer's own wording, which names the candidates as
-    ///   functions, answered 30 of 30 as well.
-    /// - The on-device system model, one cold session for each query,
-    ///   answered 27 of 30 with the earlier default ("file operations:
-    ///   create, write, append, delete, move" answered 0 of 3) and 30 of 30
-    ///   with this text. One cached root session for all ten queries
-    ///   answered 30 of 30 with both.
-    /// - `FullMonty`'s four demo queries answered 12 of 12 on both models with
-    ///   every wording.
-    ///
-    /// The grammar, the prompt, and the candidate blocks were the same in
-    /// every run. The sentence that decides the empty case is the last one:
-    /// a model told only to "return an empty list if nothing fits" returns
-    /// it for a query that a candidate serves.
+    /// **The empty-answer paragraph (card `^zxm99zs`).** A default that
+    /// read "return an empty list if nothing fits" made
+    /// `mlx-community/Qwen3-4B-4bit` answer 0 of 30 over a nine-function
+    /// catalog with ten consumer queries, three rounds each, and made the
+    /// on-device system model answer 27 of 30. A default that permits an
+    /// empty list only when no candidate is related to the request answered
+    /// 30 of 30 on both models.
     public static let selectionDefault: String = """
-        The candidates below are the items available to do a task, each under its id. Given a task, \
-        answer with the ids of the candidates that do it — the fewest that suffice, in call order when \
-        order matters. Use only the ids shown. Prefer the closest candidates over an empty answer; \
-        answer with an empty list only when no candidate is related to the task at all.
+        Each candidate below has an id and a description. Given a request, choose the candidates \
+        that serve it: the fewest that suffice, in order of use when order matters.
+
+        Answer with the id of each chosen candidate. Copy each id exactly as it is written after \
+        "id:", character for character, with its full scheme, path and punctuation. An id is not a \
+        name or a title: do not shorten it, change it or make one up.
+
+        Answer with an empty list only when no candidate is related to the request at all.
         """
 }

@@ -43,8 +43,9 @@ struct ZeroConfigSearcherRealModelTests {
     /// answered 5 of 5. Both failing queries read as an order to the model
     /// itself rather than as a task to select candidates for, and a cold
     /// session has no earlier turn to tell the two apart.
-    /// `SelectionTier.prompt(prefix:intent:)` now puts every intent under a
-    /// `# Task` heading, and all four queries answered 5 of 5 cold. Running
+    /// `SelectionTier.prompt(prefix:intent:)` then put every intent under a
+    /// `# Task` heading, and all four queries answered 5 of 5 cold. Since
+    /// card `^knyvhkf`, a `<request>` block holds the intent instead. Running
     /// every query, not just the one that failed, is what keeps a later
     /// wording change from trading one query's answer for another's.
     ///

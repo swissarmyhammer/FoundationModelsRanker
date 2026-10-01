@@ -12,16 +12,22 @@ import PackageDescription
 // - `swift test --package-path IntegrationTests` runs the real-model tests.
 //   Use `--filter` inside this package to run one test.
 //
-// This package depends on the root package by path and on nothing else. The
-// root package depends on FoundationModelsExtras, and this package gets that
-// dependency through the root package, so there is no pin here to keep in
-// step with the root manifest.
+// This package depends on the root package by path, and on
+// FoundationModelsExtras. A test here loads `mlx-community/Qwen3-4B-4bit`
+// through the `PooledModel` of Extras, and a target can use a product only of
+// a package that its own manifest names. The Extras URL and branch are the
+// same as in the root manifest, so SwiftPM resolves one Extras checkout for
+// both packages. Keep the two declarations in step.
 
 /// The root package, library product, and library target name.
 ///
 /// Repeated identifiers are extracted to named constants so the manifest has
 /// a single source of truth, the same pattern the root manifest follows.
 let rootPackageName = "FoundationModelsRanker"
+
+/// The package and the core library product of FoundationModelsExtras. The
+/// root manifest holds the same name in its own `extrasName` constant.
+let extrasName = "FoundationModelsExtras"
 
 /// The root package's example-logic library product.
 ///
@@ -32,10 +38,12 @@ let exampleCoreProductName = "FullMontyCore"
 
 /// The SwiftPM manifest for FoundationModelsRanker's real-model tests.
 ///
-/// The one test target holds the tests that drive a live
+/// The one test target holds the tests that drive a live model: the
 /// `SystemLanguageModel`, so a run needs a Mac with Apple Intelligence turned
-/// on. Selection is structural: this target exists only in this package, so a
-/// root `swift test` cannot see it.
+/// on, and `mlx-community/Qwen3-4B-4bit` through MLX, so the first run
+/// downloads its weights into the Hugging Face cache. Selection is
+/// structural: this target exists only in this package, so a root
+/// `swift test` cannot see it.
 let package = Package(
     name: "IntegrationTests",
     // Commit to macOS 27 / FoundationModels v2, the same floor as the root
@@ -44,7 +52,8 @@ let package = Package(
         .macOS("27.0")
     ],
     dependencies: [
-        .package(path: "..")
+        .package(path: ".."),
+        .package(url: "git@github.com:swissarmyhammer/\(extrasName).git", branch: "main"),
     ],
     targets: [
         .testTarget(
@@ -52,6 +61,8 @@ let package = Package(
             dependencies: [
                 .product(name: rootPackageName, package: rootPackageName),
                 .product(name: exampleCoreProductName, package: rootPackageName),
+                // `PooledModel`: the URI-id catalog suite loads Qwen3-4B.
+                .product(name: extrasName, package: extrasName),
             ],
             path: "Tests/\(rootPackageName)IntegrationTests"
         )

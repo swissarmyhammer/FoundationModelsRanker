@@ -38,16 +38,6 @@ struct PooledConformanceTests {
     /// The largest number of matches that one search returns.
     private static let matchLimit = 5
 
-    /// The prompt that the cached-root path sends for `query`. The prefix is
-    /// the instructions of the root session, so the prompt holds only the
-    /// `# Task` heading and the query.
-    ///
-    /// - Parameter query: The search intent.
-    /// - Returns: The prompt text.
-    private static func taskPrompt(for query: String) -> String {
-        "# Task\n\n\(query)"
-    }
-
     @Test("A SelectionTier over a PooledModel factory selects ids and forks the pooled root for each query")
     func aSelectionTierOverAPooledModelForksTheRootForEachQuery() async throws {
         let script = StubLanguageModelScript(answer: Self.selectionJSON)
@@ -79,7 +69,9 @@ struct PooledConformanceTests {
         // guided generation of `PooledSession` through `any AgentSession`.
         #expect(
             script.calls == Self.queries.map { query in
-                StubGenerationCall(prompts: [Self.taskPrompt(for: query)], isGuided: true)
+                // The prefix is the instructions of the root session, so the
+                // prompt holds only the request part.
+                StubGenerationCall(prompts: [ExpectedSelectionPrompt.request(for: query)], isGuided: true)
             }
         )
     }

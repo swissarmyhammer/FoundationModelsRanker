@@ -74,11 +74,21 @@ struct SelectionConfigTests {
     // MARK: - `.selectionDefault` neutral wording
 
     @Test
-    func selectionDefaultUsesNeutralItemAndIdLanguage() {
+    func selectionDefaultUsesNeutralCandidateAndIdLanguage() {
         let preamble = String.selectionDefault
 
-        #expect(preamble.contains("items"))
-        #expect(preamble.contains("ids"))
+        #expect(preamble.contains("Each candidate below has an id and a description."))
+    }
+
+    @Test
+    func selectionDefaultTellsTheModelToCopyEachIdExactlyFromItsIdLine() {
+        // A real model shortened a URI id to its last path part. The
+        // preamble must say that an id is copied whole, from its `id:` line.
+        let preamble = String.selectionDefault
+
+        #expect(preamble.contains(#"Copy each id exactly as it is written after"#))
+        #expect(preamble.contains(#""id:", character for character, with its full scheme, path and punctuation."#))
+        #expect(preamble.contains("do not shorten it, change it or make one up."))
     }
 
     @Test

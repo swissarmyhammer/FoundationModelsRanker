@@ -21,12 +21,14 @@ import Foundation
 /// (`../FoundationModelsMultitool/Sources/.../Librarian.swift`), over any
 /// narrow `SelectionCatalog` conformer instead of a bespoke index type.
 ///
-/// Assembles a prefix from `SelectionConfig.preamble`, a `# Candidates`
-/// header, and every catalog id rendered as a markdown heading above that
-/// id's **`summaryBlock(forID:)`** (the summary seeds the
-/// selection prefix; the full `block(forID:)` is the result payload) once
-/// at `init`, since the catalog never changes for this tier's lifetime — a
-/// reload replaces the whole tier rather than mutating one in place.
+/// Assembles a prefix from `SelectionConfig.preamble` and one
+/// `<candidate>` block for each catalog id. The block holds an `id:` line
+/// with the id and a `description:` line with that id's
+/// **`summaryBlock(forID:)`** (the summary seeds the selection prefix; the
+/// full `block(forID:)` is the result payload). The tier assembles the
+/// prefix once at `init`, since the catalog never changes for this tier's
+/// lifetime — a reload replaces the whole tier rather than mutating one in
+/// place.
 ///
 /// **One prompt picks.** A search sends the intent to the model and returns
 /// the ids the model answered, in the model's order. No retrieval signal
@@ -48,15 +50,17 @@ import Foundation
 ///
 /// **Where the prefix goes** follows `SelectionConfig.sessionSource`. A
 /// `.factory` source seeds the prefix as each session's instructions, so the
-/// prompt carries the intent alone, under a `# Task` heading. A `.session`
-/// source hands over one live session, which takes no new instructions: the
-/// tier forks that session for each prompt and carries the prefix above the
-/// same heading instead (`prompt(prefix:intent:)`). Either way the model sees
-/// the same prefix, and reads the intent as a task to select for.
+/// prompt carries only the request part: the intent in a `<request>` block,
+/// and a line that asks for the exact ids. A `.session` source hands over
+/// one live session, which takes no new instructions: the tier forks that
+/// session for each prompt and carries the prefix above the same request
+/// part instead (`prompt(prefix:intent:)`). Either way the model sees the
+/// same prefix, and reads the intent as a request to select for.
 ///
 /// **IDs only**: the guided output is
 /// `Selection { ids: [String] }`. The assembled prefix shows every candidate
-/// id as a markdown heading, so the model can read the ids it may return.
+/// id on its own `id:` line, so the model can read and copy the ids it may
+/// return.
 /// This tier applies no grammar of its own: a caller that wants guided
 /// generation applies one when it makes the session, and
 /// `idEnumSchema(ids:)` gives that caller the id set. Returned ids map back
@@ -95,8 +99,15 @@ public actor SelectionTier {
     /// the task, so that the next search asks the factory again.
     private var rootSessionTask: Task<any AgentSession, any Error>?
 
-    /// The text between two candidate entries in an assembled prefix.
-    private static let candidateSeparator = "\n\n"
+    /// One blank line: the text between the preamble and the first
+    /// candidate entry, between two candidate entries, and between a prefix
+    /// and the request part of a `.session` prompt.
+    private static let partSeparator = "\n\n"
+
+    /// The last line of each prompt, below the `<request>` block. It repeats
+    /// the exact-id rule of `SelectionConfig.selectionDefault` beside the
+    /// intent, where the model reads it last.
+    private static let exactIDsLine = "Answer with the exact ids of the chosen candidates."
 
     /// Creates a selection tier over `catalog`, using `config`'s session
     /// source, preamble, and budget.
@@ -261,26 +272,31 @@ public actor SelectionTier {
     /// Both the cached-root path and the over-budget path prompt through
     /// this one function, so the two cannot drift apart.
     ///
-    /// Every prompt puts the intent under a `# Task` heading, whatever the
-    /// session source. The heading tells the model that the message names a
-    /// task to *select candidates for*, not a task to *do*. Many search
-    /// intents read as an order to the model itself -- "record my staged
-    /// changes as a new commit", "how do I list or delete a branch" -- and a
-    /// session that has answered nothing yet has nothing but the heading to
-    /// tell the two apart. Measured on the on-device system model over
-    /// `FullMonty`'s four demo queries, five cold runs each on a new
-    /// `Searcher`: without the heading the two order-shaped queries answered
-    /// 0 of 5 and 3 of 5; with it, every query answered 5 of 5. A session
-    /// that has already answered once needs no heading, because its own
-    /// transcript shows what an answer looks like, which is why the defect
-    /// showed only on the first question of a new `Searcher`.
+    /// Every prompt has the same request part, whatever the session source:
+    /// the intent between a `<request>` line and a `</request>` line, then
+    /// `exactIDsLine`.
     ///
-    /// The heading is where the two sources stop being alike. A `.factory`
-    /// source already seeded `prefix` as the session's instructions, so its
-    /// prompt is the heading and the intent. A `.session` source cannot take
-    /// new instructions, so its prompt carries the whole prefix above the
-    /// heading; without the prefix the model never sees the catalog and can
-    /// return no id at all.
+    /// The `<request>` block tells the model that the message is a request
+    /// to *select candidates for*, not a task to *do*. Many search intents
+    /// read as an order to the model itself -- "record my staged changes as
+    /// a new commit", "how do I list or delete a branch" -- and a session
+    /// that has answered nothing yet has nothing but the prompt to tell the
+    /// two apart. A `# Task` heading did this job before card `^knyvhkf`.
+    /// Measured on the on-device system model over `FullMonty`'s four demo
+    /// queries, five cold runs each on a new `Searcher`: without the
+    /// heading the two order-shaped queries answered 0 of 5 and 3 of 5;
+    /// with it, every query answered 5 of 5.
+    ///
+    /// `exactIDsLine` comes last, so the last text the model reads before
+    /// it answers asks for the exact ids. A real model shortened a URI id to
+    /// its last path part when no text asked for the exact id.
+    ///
+    /// The request part is where the two sources stop being alike. A
+    /// `.factory` source already seeded `prefix` as the session's
+    /// instructions, so its prompt is the request part alone. A `.session`
+    /// source cannot take new instructions, so its prompt carries the whole
+    /// prefix, one blank line, and then the request part; without the
+    /// prefix the model never sees the catalog and can return no id at all.
     ///
     /// - Parameters:
     ///   - prefix: this call's assembled candidate prefix -- the whole
@@ -288,12 +304,12 @@ public actor SelectionTier {
     ///   - intent: the plain-language search intent.
     /// - Returns: the prompt text to send.
     private func prompt(prefix: String, intent: String) -> String {
-        let task = "# Task\n\n\(intent)"
+        let request = "<request>\n\(intent)\n</request>\n\(Self.exactIDsLine)"
         switch config.sessionSource {
         case .factory:
-            return task
+            return request
         case .session:
-            return "\(prefix)\n\n\(task)"
+            return "\(prefix)\(Self.partSeparator)\(request)"
         }
     }
 
@@ -375,12 +391,12 @@ public actor SelectionTier {
         var runCount = headerCount
         for id in catalog.ids {
             guard let entry = candidateEntry(forID: id, catalog: catalog) else { continue }
-            if !run.isEmpty, runCount + candidateSeparator.count + entry.count > limit {
+            if !run.isEmpty, runCount + partSeparator.count + entry.count > limit {
                 runs.append(run)
                 run = []
                 runCount = headerCount
             }
-            runCount += (run.isEmpty ? 0 : candidateSeparator.count) + entry.count
+            runCount += (run.isEmpty ? 0 : partSeparator.count) + entry.count
             run.append(id)
         }
         if !run.isEmpty {
@@ -445,12 +461,12 @@ public actor SelectionTier {
 
     // MARK: - Prefix assembly
 
-    /// Assembles this tier's instruction prefix: `preamble`
-    /// followed by a `# Candidates` header and one entry per catalog id, in
-    /// catalog order. Each entry is the id as a markdown heading above the
-    /// id's **`summaryBlock(forID:)`** — never `block(forID:)`, which stays
-    /// reserved for the verbatim `SelectionMatch.block` a selected id looks
-    /// up afterward.
+    /// Assembles this tier's instruction prefix: `preamble`, one blank
+    /// line, and one entry per catalog id, in catalog order. Each entry is a
+    /// `<candidate>` block that holds the id on an `id:` line and the id's
+    /// **`summaryBlock(forID:)`** on a `description:` line — never
+    /// `block(forID:)`, which stays reserved for the verbatim
+    /// `SelectionMatch.block` a selected id looks up afterward.
     ///
     /// - Parameters:
     ///   - preamble: the selection guidance to prepend.
@@ -461,8 +477,9 @@ public actor SelectionTier {
     }
 
     /// Assembles an instruction prefix for an arbitrary candidate id
-    /// set: `preamble` followed by a `# Candidates` header and
-    /// one `candidateEntry(forID:catalog:)` per id, in `ids`' order —
+    /// set: `preamble`, one blank line, and one
+    /// `candidateEntry(forID:catalog:)` per id, in `ids`' order, with one
+    /// blank line between two entries —
     /// `assemblePrefix(preamble:catalog:)`'s whole-catalog case is
     /// `ids: catalog.ids`; the over-budget path passes one run of ids
     /// instead. An id the catalog has no summary for is left out, exactly
@@ -475,19 +492,23 @@ public actor SelectionTier {
     /// - Returns: the assembled prefix text.
     public static func assemblePrefix(preamble: String, ids: [String], catalog: any SelectionCatalog) -> String {
         let entries = ids.compactMap { candidateEntry(forID: $0, catalog: catalog) }
-        return "\(preamble)\n\n# Candidates\n\(entries.joined(separator: candidateSeparator))"
+        return "\(preamble)\(partSeparator)\(entries.joined(separator: partSeparator))"
     }
 
-    /// Renders one candidate's prefix entry: the candidate id as a markdown
-    /// heading, with the id's `summaryBlock(forID:)` on the line below.
+    /// Renders one candidate's prefix entry: a `<candidate>` block with the
+    /// id on an `id:` line and the id's `summaryBlock(forID:)` on a
+    /// `description:` line.
     ///
-    /// The heading is what makes the id visible to the model. The preamble
-    /// tells the model "Use only the ids shown", so the prefix must show
-    /// which ids exist; a prefix of bare summaries makes the model answer with a
-    /// summary, which then resolves to nothing and reports
-    /// `.unknownSelectedId`. Both `assemblePrefix` overloads and
-    /// `candidateRuns` render through this one function, so the paths
-    /// cannot drift apart.
+    /// The entry makes the id visible to the model, and it labels the id as
+    /// an id. The preamble tells the model to copy each id exactly as it is
+    /// written after `id:`, so the id stands alone on that line. A prefix
+    /// of bare summaries makes the model answer with a summary, and a
+    /// `## <id>` heading makes the id read like a title: a real model
+    /// shortened the URI id `https://example.com/modules/quantum-flux-capacitor`
+    /// under such a heading to `quantum-flux-capacitor`. Either answer
+    /// resolves to nothing and reports `.unknownSelectedId`. Both
+    /// `assemblePrefix` overloads and `candidateRuns` render through this
+    /// one function, so the paths cannot drift apart.
     ///
     /// - Parameters:
     ///   - id: the candidate id to render.
@@ -495,7 +516,7 @@ public actor SelectionTier {
     /// - Returns: the rendered entry, or `nil` if `id` isn't in `catalog`.
     private static func candidateEntry(forID id: String, catalog: any SelectionCatalog) -> String? {
         guard let summary = catalog.summaryBlock(forID: id) else { return nil }
-        return "## \(id)\n\(summary)"
+        return "<candidate>\nid: \(id)\ndescription: \(summary)\n</candidate>"
     }
 
     // MARK: - Guided-generation JSON Schema

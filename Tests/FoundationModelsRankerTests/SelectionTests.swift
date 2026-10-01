@@ -203,12 +203,9 @@ struct SelectionTests {
 
         _ = try await tier.search(intent: "roll back the last deploy", limit: 5)
 
-        let prompt = try #require(session.receivedPrompts.first)
-        #expect(prompt.contains(String.selectionDefault))
-        for id in Self.catalog.ids {
-            #expect(prompt.contains("## \(id)"))
-        }
-        #expect(prompt.hasSuffix("# Task\n\nroll back the last deploy"))
+        let prefix = SelectionTier.assemblePrefix(preamble: .selectionDefault, catalog: Self.catalog)
+        let request = ExpectedSelectionPrompt.request(for: "roll back the last deploy")
+        #expect(session.receivedPrompts == ["\(prefix)\n\n\(request)"])
     }
 
     @Test
@@ -236,12 +233,13 @@ struct SelectionTests {
     }
 
     @Test
-    func aFactorySessionIsPromptedWithTheIntentUnderTheTaskHeading() async throws {
+    func aFactorySessionIsPromptedWithTheIntentInARequestBlock() async throws {
         // The factory path seeds the prefix as the session's instructions, so
-        // the prompt carries no prefix. It still carries the `# Task` heading
-        // a supplied session's prompt carries. The heading says the message is
-        // a task to select for, not a task to do, and a session that has
-        // answered nothing yet has nothing else to tell it from an order.
+        // the prompt carries no prefix. It still carries the `<request>` block
+        // and the exact-id line that a supplied session's prompt carries. The
+        // block says the message is a request to select for, not a task to
+        // do, and a session that has answered nothing yet has nothing else to
+        // tell it from an order.
         let session = ScriptedAgentSession([#"{"ids":["deploy"]}"#])
         let config = SelectionConfig(model: { _ in session })
         let tier = SelectionTier(
@@ -252,7 +250,7 @@ struct SelectionTests {
 
         _ = try await tier.search(intent: "roll back the last deploy", limit: 5)
 
-        #expect(session.receivedPrompts == ["# Task\n\nroll back the last deploy"])
+        #expect(session.receivedPrompts == [ExpectedSelectionPrompt.request(for: "roll back the last deploy")])
     }
 
     // MARK: - Summary vs full block separation
@@ -299,6 +297,60 @@ struct SelectionTests {
     }
 
     @Test
+    func aUriIdRendersAsACandidateBlockWithLabeledIdAndDescriptionLines() {
+        // A real model shortened a URI id to its last path part when the id
+        // was a `## <id>` heading, because a heading reads like a title. The
+        // id now stands on its own `id:` line, with nothing else on it.
+        let id = "https://example.com/modules/quantum-flux-capacitor"
+        let summary = "Provides quantum flux capacitor calibration routines."
+        let catalog = FixtureSelectionCatalog([.init(id: id, block: "the full block", summary: summary)])
+
+        let prefix = SelectionTier.assemblePrefix(preamble: "PREAMBLE", catalog: catalog)
+
+        #expect(prefix == "PREAMBLE\n\n<candidate>\nid: \(id)\ndescription: \(summary)\n</candidate>")
+    }
+
+    @Test
+    func candidateBlocksAreSeparatedByOneBlankLine() {
+        let prefix = SelectionTier.assemblePrefix(preamble: "PREAMBLE", catalog: Self.threeItemCatalog)
+
+        let expected = """
+            PREAMBLE
+
+            <candidate>
+            id: deploy
+            description: ships containers to a cluster
+            </candidate>
+
+            <candidate>
+            id: rollback
+            description: reverts the last release
+            </candidate>
+
+            <candidate>
+            id: status
+            description: reports the current release state
+            </candidate>
+            """
+        #expect(prefix == expected)
+    }
+
+    @Test
+    func theIdsGuideAsksForTheExactIdCopiedFromItsIdLine() throws {
+        // A guided-generation backend shows the model this text beside the
+        // `ids` field, so it must repeat the exact-id rule of the preamble.
+        let schema = try SelectionTier.idEnumSchema(ids: Self.catalog.ids)
+
+        let idsSchema = try SelectionSchemaTestSupport.idsSchema(in: schema)
+
+        #expect(
+            idsSchema["description"] as? String
+                == "the exact id of each chosen candidate, copied character for character from its id: line; "
+                + "empty only when no candidate is related to the request"
+        )
+    }
+
+    @Test
     func theSeededSessionInstructionsCarryEveryCatalogId() async throws {
         let factory = RecordingSessionFactory(responses: [#"{"ids":["deploy"]}"#])
         let config = SelectionConfig(model: factory.makeSession)
@@ -310,8 +362,8 @@ struct SelectionTests {
 
         _ = try await tier.search(intent: "task", limit: 5)
 
-        // The preamble tells the model "Do not invent ids", so the prefix
-        // must show it the ids it is allowed to return.
+        // The preamble tells the model to copy each id exactly and not to
+        // make one up, so the prefix must show it the ids it can return.
         let instructions = try #require(factory.receivedInstructions.first)
         for id in Self.catalog.ids {
             #expect(instructions.contains(id))
@@ -431,7 +483,7 @@ struct SelectionTests {
     @Test
     func emptyCatalogSearchSendsNoPromptToTheSession() async throws {
         // A catalog of zero items has no id to select. A prompt over it is
-        // the preamble and an empty `# Candidates` part, and a real model
+        // the preamble and no candidate block, and a real model
         // answers that prompt with prose that does not decode. Thus the tier
         // must not call the session at all.
         let session = ScriptedAgentSession([#"{"ids":[]}"#])

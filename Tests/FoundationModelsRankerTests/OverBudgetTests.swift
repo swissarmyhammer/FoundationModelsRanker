@@ -4,8 +4,8 @@ import Testing
 @testable import FoundationModelsRanker
 
 /// Tests for the selection tier's over-budget path: when the assembled
-/// prefix (the preamble, the `# Candidates` header, and one `## <id>`
-/// heading above each candidate's `summaryBlock(forID:)`) exceeds
+/// prefix (the preamble, and one `<candidate>` block with an `id:` line and
+/// a `description:` line for each candidate's `summaryBlock(forID:)`) exceeds
 /// `capacityCharacterLimit`, the tier splits the catalog ids, in catalog
 /// order, into runs whose assembled prefix each fits the budget, and sends
 /// one prompt for each run. Every id reaches one prompt. No retrieval
@@ -74,10 +74,10 @@ struct OverBudgetTests {
 
         _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
 
-        // The heading line is matched whole, so an id that is a prefix of
+        // The `id:` line is matched whole, so an id that is a prefix of
         // another id cannot count twice.
         for id in Self.catalog.ids {
-            let promptsCarryingID = factory.receivedInstructions.filter { $0.contains("## \(id)\n") }
+            let promptsCarryingID = factory.receivedInstructions.filter { $0.contains("\nid: \(id)\n") }
             #expect(promptsCarryingID.count == 1, "\(id) must reach exactly one prompt")
         }
     }
@@ -181,12 +181,13 @@ struct OverBudgetTests {
         #expect(session.forkCount == Self.expectedRuns.count)
         // A live session takes no new instructions, so each prompt carries
         // its own run's prefix above the intent, and no other run's.
-        let expectedPrompts = Self.expectedRuns.map { "\(Self.prefix(for: $0))\n\n# Task\n\nalpha" }
+        let request = ExpectedSelectionPrompt.request(for: "alpha")
+        let expectedPrompts = Self.expectedRuns.map { "\(Self.prefix(for: $0))\n\n\(request)" }
         #expect(session.receivedPrompts == expectedPrompts)
     }
 
     @Test
-    func overBudgetFactorySessionIsPromptedWithTheIntentUnderTheTaskHeading() async throws {
+    func overBudgetFactorySessionIsPromptedWithTheIntentInARequestBlock() async throws {
         let session = ScriptedAgentSession(Self.expectedRuns.map { _ in #"{"ids":["alpha"]}"# })
         let config = SelectionConfig(model: { _ in session }, capacityCharacterLimit: Self.twoCandidateLimit)
         let tier = Self.makeTier(config: config)
@@ -194,9 +195,10 @@ struct OverBudgetTests {
         _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
 
         // A factory session already holds its run's prefix as instructions,
-        // so each prompt carries the same `# Task` heading and the intent,
-        // exactly as the under-budget factory prompt does.
-        #expect(session.receivedPrompts == Self.expectedRuns.map { _ in "# Task\n\nalpha" })
+        // so each prompt carries the same `<request>` block and exact-id
+        // line, exactly as the under-budget factory prompt does.
+        let request = ExpectedSelectionPrompt.request(for: "alpha")
+        #expect(session.receivedPrompts == Self.expectedRuns.map { _ in request })
     }
 
     // MARK: - One-off sessions: no caching, no fork

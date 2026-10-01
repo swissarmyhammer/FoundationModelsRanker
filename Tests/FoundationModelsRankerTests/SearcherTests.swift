@@ -171,11 +171,11 @@ struct SearcherTests {
         #expect(matches.first?.score == OrderScores.firstPick)
         #expect(matches.first?.signals == nil)
         // The catalog does not fit one prompt, so it is split into several,
-        // and every item reaches exactly one of them. The heading line is
-        // matched whole, because `## filler3` is a prefix of `## filler30`.
+        // and every item reaches exactly one of them. The `id:` line is
+        // matched whole, because `id: filler3` is a prefix of `id: filler30`.
         #expect(factory.receivedInstructions.count > 1)
         for item in Self.bulkItems {
-            let promptsCarryingID = factory.receivedInstructions.filter { $0.contains("## \(item.id)\n") }
+            let promptsCarryingID = factory.receivedInstructions.filter { $0.contains("\nid: \(item.id)\n") }
             #expect(promptsCarryingID.count == 1, "\(item.id) must reach exactly one prompt")
         }
     }
@@ -290,9 +290,8 @@ struct SearcherTests {
         _ = try await searcher.search("find files by name", limit: 5)
 
         let prompt = try #require(session.receivedPrompts.first)
-        #expect(prompt.contains("# Candidates"))
-        #expect(prompt.contains("## glob"))
-        #expect(prompt.contains("find files by name"))
+        #expect(prompt.contains("<candidate>\nid: glob\n"))
+        #expect(prompt.hasSuffix(ExpectedSelectionPrompt.request(for: "find files by name")))
     }
 
     @Test

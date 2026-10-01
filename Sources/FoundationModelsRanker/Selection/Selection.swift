@@ -4,7 +4,8 @@
 // `@Generable`, ids-only output. Doc comment updated to reference
 // `SelectionConfig.selectionDefault` (this package's neutral rename of
 // `.librarianDefault`) and to drop the FoundationModelsMetadataRegistry-
-// specific `MetadataSearcher`/`Match` cross-references.
+// specific `MetadataSearcher`/`Match` cross-references. Card ^knyvhkf
+// changed the `@Guide` text to ask for the exact id.
 
 import FoundationModels
 
@@ -16,13 +17,18 @@ import FoundationModels
 /// choose among ids.
 @Generable
 public struct Selection: Sendable, Equatable {
-    /// The selected ids -- fewest that suffice, in call order when order
-    /// matters (the selection guidance's own phrasing,
-    /// `SelectionConfig.selectionDefault`); empty when nothing in the
-    /// candidate set fits the intent.
+    /// The selected ids: the exact id of each chosen candidate, copied from
+    /// the `id:` line of its `<candidate>` block in the assembled prefix.
+    /// Empty only when no candidate is related to the request.
+    ///
+    /// The guide text repeats the exact-id rule of
+    /// `SelectionConfig.selectionDefault`, because a guided-generation
+    /// backend shows the model this text beside the `ids` field. A real
+    /// model shortened a URI id to its last path part when neither text
+    /// told it to copy the id whole (card `^knyvhkf`).
     @Guide(
-        description: "the selected ids, fewest that suffice, in call order when order "
-            + "matters; empty if nothing in the candidate set fits the intent."
+        description: "the exact id of each chosen candidate, copied character for character from its id: line; "
+            + "empty only when no candidate is related to the request"
     )
     public var ids: [String]
 

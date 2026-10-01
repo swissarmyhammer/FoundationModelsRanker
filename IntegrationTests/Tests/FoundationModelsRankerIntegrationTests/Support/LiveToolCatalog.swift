@@ -1,26 +1,27 @@
 import FoundationModelsRanker
 
-/// An in-memory `SelectionCatalog` of tool ids and one-line descriptions, for
-/// the tests that drive a live model.
+/// An in-memory `SelectionCatalog` of ids and one-line descriptions, for the
+/// tests that drive a live model.
 ///
-/// A bare `LanguageModelSession` carries no id-enum grammar, so nothing stops
-/// the model from answering with text that is not an id. Every summary
-/// therefore names its own id, and the model can then answer only with an id
-/// it has read. This type renders that summary for every entry, so no test
-/// has to remember the rule.
+/// The summary of each entry is its description alone. The assembled prefix
+/// already puts each id on the `id:` line of its `<candidate>` block, above a
+/// `description:` line with this summary. Before card `^knyvhkf`, the
+/// summary also named its own id, because the prefix showed each id only as a
+/// heading. A summary that repeats the id now gives the model a second
+/// `id:` text in the `description:` line, and that is not the format that a
+/// real catalog gives.
 ///
 /// The root package answers its hermetic tests with `FixtureSelectionCatalog`
 /// (`Tests/FoundationModelsRankerTests/Support/FixtureSelectionCatalog.swift`)
 /// instead. That type lives in a test target, which no other package can
-/// import, and it carries a per-entry optional summary that the rule above
-/// leaves no room for.
+/// import.
 struct LiveToolCatalog: SelectionCatalog {
-    /// One entry: a tool id, and the one-line description the model reads.
+    /// One entry: an id, and the one-line description the model reads.
     struct Entry {
         /// The id the model answers with.
         let id: String
 
-        /// What the tool does, in one line.
+        /// What the entry does, in one line.
         let description: String
     }
 
@@ -38,8 +39,7 @@ struct LiveToolCatalog: SelectionCatalog {
     }
 
     func summaryBlock(forID id: String) -> String? {
-        guard let description = descriptions[id] else { return nil }
-        return "id: \(id) -- \(description)"
+        descriptions[id]
     }
 
     func block(forID id: String) -> String? {

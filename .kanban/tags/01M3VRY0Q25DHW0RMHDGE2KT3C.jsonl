@@ -1,0 +1,1 @@
+{"id":"01M3VRY0Q5VNGEERAJS84YX879","timestamp":"2026-10-01T13:02:19.877929Z","op":"create","item_id":"01M3VRY0Q25DHW0RMHDGE2KT3C","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: 1d76db\n+tag_name: selection\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: 1d76db\n-tag_name: selection\n","transaction_id":null}
