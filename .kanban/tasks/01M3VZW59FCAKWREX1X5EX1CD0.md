@@ -69,8 +69,31 @@ comments:
     - evidence: 7 files: Sources/FoundationModelsRanker/Selection/SelectionTier.swift, Sources/FoundationModelsRanker/Selection/SelectionConfig.swift (doc comment only), Tests/FoundationModelsRankerTests/Support/ExpectedSelectionPrompt.swift, Tests/FoundationModelsRankerTests/SelectionTests.swift, Tests/FoundationModelsRankerTests/OverBudgetTests.swift, Tests/FoundationModelsRankerTests/SearcherTests.swift, Tests/FoundationModelsRankerTests/PooledConformanceTests.swift. `swift test --package-path IntegrationTests --filter FunctionCatalogRealModelTests` x5 in sequence: 10/10, 10/10, 10/10, 10/10, 10/10 (50 of 50, 0 issues). `UriCatalogQwenRealModelTests`: 5/5. `swift test --package-path IntegrationTests` x2: 6 tests in 6 suites passed each run. `swift test`: 303 tests in 24 suites passed. Only warning: the toolchain line "missing creator for mutated node" for the mlx-swift_Cmlx.bundle dependency.
     - next: /review. The "CI is green on the pushed commit" item stays open until the orchestrator commits and pushes.
   timestamp: 2026-10-01T16:32:56.257667+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m3w5f00nb28ze8fpn3r5h51b
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (e6d340d). 7 files reviewed. 0 findings, 0 confirmed, 1 refuted, 0 failed. 6 .kanban files are not reviewed because of .reviewignore. The task has no prior Review Findings section.
+    - next: The orchestrator pushes the commit. Then the orchestrator makes sure that CI is green on the pushed commit.
+  timestamp: 2026-10-01T16:41:19.125138+00:00
+- actor: claude-code
+  id: 01m3w5f8x0hetgttnwr7qs2895
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 7 files
+    - test: green — swift test 303 passed; IntegrationTests 6 passed
+    - commit: e6d340d
+    - review: clean — 0 findings, 1 refuted
+  timestamp: 2026-10-01T16:41:28.224339+00:00
+- actor: claude-code
+  id: 01m3w5ygyp5a3vj2kzyecxwq99
+  text: |-
+    ### ci — green
+    - evidence: CI run 36893892777 on e6d340d. "ci / Build & test" and "ci / Integration (opt-in, real dependencies)" passed.
+    - next: none.
+  timestamp: 2026-10-01T16:49:47.990822+00:00
+position_column: done
+position_ordinal: b380
 title: System model makes up the id files.create for the query "write file, edit file, create file"
 ---
 ## What
@@ -89,7 +112,7 @@ The Qwen3-4B URI suite passed 5 of 5 in the same CI run. The fix must keep that 
 - [x] Correct the prompt text (preamble, entry format, prompt or `@Guide`) so that the system model selects only ids from the catalog for this query. Do not change the test query or the test catalog to hide the failure.
 - [x] Run `swift test --package-path IntegrationTests --filter FunctionCatalogRealModelTests` at least 5 times in sequence and record each count on this card. Each run must pass 10 of 10. Keep the full output of each run.
 - [x] The Qwen3-4B URI suite (`UriCatalogQwenRealModelTests`) still passes 5 of 5.
-- [ ] CI is green on the pushed commit.
+- [x] CI is green on the pushed commit.
 
 ## Tests
 - [x] Update the unit tests that pin the prompt text, if the text changes.

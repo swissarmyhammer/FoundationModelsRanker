@@ -55,6 +55,13 @@ comments:
     - evidence: CI run 36877840484 on 30b6d91. "ci / Build & test" passed. "ci / Integration (opt-in, real dependencies)" failed: FunctionCatalogRealModelTests, query "write file, edit file, create file", `.unknownSelectedId(id: "files.create")`. The Qwen3-4B URI suite passed 5 of 5.
     - next: ^5ex1cd0 corrects the prompt. The "CI is green" item stays open until CI is green on its commit. The sha goes to foundationmodelsmetadataregistry-f7 after that.
   timestamp: 2026-10-01T15:03:44.276709+00:00
+- actor: claude-code
+  id: 01m3w5yfxmpmkvp58mrvkx2dkx
+  text: |-
+    ### ci — green
+    - evidence: CI run 36893892777 on e6d340d (this change plus the ^5ex1cd0 correction). "ci / Build & test" and "ci / Integration (opt-in, real dependencies)" passed.
+    - next: send e6d340d to foundationmodelsmetadataregistry-f7.
+  timestamp: 2026-10-01T16:49:46.932849+00:00
 position_column: done
 position_ordinal: b180
 title: 'Selection prompt: format each candidate with labeled id and description fields, and ask for the exact id'
@@ -108,7 +115,7 @@ New `@Guide` on `Selection.ids` (`Sources/FoundationModelsRanker/Selection/Selec
 - [x] Each candidate entry is a `<candidate>` block with `id:` and `description:` lines.
 - [x] With `mlx-community/Qwen3-4B-4bit` (Extras `PooledModel(ref:)`), a catalog whose ids are URIs gives back the full URI id of the matching candidate, not a shortened one, and the tier reports no `.unknownSelectedId` for it.
 - [x] Existing selection behavior (cached root + fork, over-budget runs, unknown-id filter) is unchanged.
-- [ ] CI is green on the pushed commit.
+- [x] CI is green on the pushed commit.
 
 ## Tests
 - [x] Update the unit tests that pin the prefix, the candidate entry and the prompt text (`Tests/FoundationModelsRankerTests/`), and the run-split tests whose lengths change.
