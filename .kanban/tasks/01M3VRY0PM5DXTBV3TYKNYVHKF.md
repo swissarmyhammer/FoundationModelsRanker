@@ -32,8 +32,24 @@ comments:
     - evidence: 13 files — Sources/FoundationModelsRanker/Selection/{SelectionTier,SelectionConfig,Selection}.swift; Tests/FoundationModelsRankerTests/{SelectionTests,OverBudgetTests,SearcherTests,PooledConformanceTests,SelectionConfigTests}.swift, Support/ExpectedSelectionPrompt.swift (new); IntegrationTests/Package.swift, Support/LiveToolCatalog.swift, ZeroConfigSearcherRealModelTests.swift, UriCatalogQwenRealModelTests.swift (new); .github/workflows/ci.yml. `swift test`: 302 tests in 24 suites passed. `swift test --package-path IntegrationTests`: 6 suites passed (URI suite 5 of 5 rounds). Push and the registry message are left for the user.
     - next: /review
   timestamp: 2026-10-01T14:31:17.537189+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m3vychmrgv4dtthrpcfzdteb
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (30b6d91). 0 findings, 0 confirmed, 0 refuted. 7 validators ran, 0 failed. 14 files reviewed. 6 .kanban files not reviewed (.reviewignore).
+    - next: The orchestrator pushes to origin main, then makes sure that CI is green on the pushed commit.
+  timestamp: 2026-10-01T14:37:38.840468+00:00
+- actor: claude-code
+  id: 01m3vyctt6vdcqerf756zgvwdt
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 14 files
+    - test: green — swift test 302 passed; IntegrationTests 6 passed
+    - commit: 30b6d91
+    - review: clean — 0 findings (7 validators, 14 files)
+  timestamp: 2026-10-01T14:37:48.230898+00:00
+position_column: done
+position_ordinal: b180
 title: 'Selection prompt: format each candidate with labeled id and description fields, and ask for the exact id'
 ---
 ## What
