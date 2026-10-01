@@ -48,6 +48,13 @@ comments:
     - commit: 30b6d91
     - review: clean — 0 findings (7 validators, 14 files)
   timestamp: 2026-10-01T14:37:48.230898+00:00
+- actor: claude-code
+  id: 01m3vzwacmkmdzq24tc8kn28fn
+  text: |-
+    ### ci — red
+    - evidence: CI run 36877840484 on 30b6d91. "ci / Build & test" passed. "ci / Integration (opt-in, real dependencies)" failed: FunctionCatalogRealModelTests, query "write file, edit file, create file", `.unknownSelectedId(id: "files.create")`. The Qwen3-4B URI suite passed 5 of 5.
+    - next: ^5ex1cd0 corrects the prompt. The "CI is green" item stays open until CI is green on its commit. The sha goes to foundationmodelsmetadataregistry-f7 after that.
+  timestamp: 2026-10-01T15:03:44.276709+00:00
 position_column: done
 position_ordinal: b180
 title: 'Selection prompt: format each candidate with labeled id and description fields, and ask for the exact id'

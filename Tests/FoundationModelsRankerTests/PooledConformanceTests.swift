@@ -71,7 +71,10 @@ struct PooledConformanceTests {
             script.calls == Self.queries.map { query in
                 // The prefix is the instructions of the root session, so the
                 // prompt holds only the request part.
-                StubGenerationCall(prompts: [ExpectedSelectionPrompt.request(for: query)], isGuided: true)
+                StubGenerationCall(
+                    prompts: [ExpectedSelectionPrompt.request(for: query, ids: SearcherTests.toolItems.map(\.id))],
+                    isGuided: true
+                )
             }
         )
     }

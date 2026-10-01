@@ -204,7 +204,7 @@ struct SelectionTests {
         _ = try await tier.search(intent: "roll back the last deploy", limit: 5)
 
         let prefix = SelectionTier.assemblePrefix(preamble: .selectionDefault, catalog: Self.catalog)
-        let request = ExpectedSelectionPrompt.request(for: "roll back the last deploy")
+        let request = ExpectedSelectionPrompt.request(for: "roll back the last deploy", ids: Self.catalog.ids)
         #expect(session.receivedPrompts == ["\(prefix)\n\n\(request)"])
     }
 
@@ -250,7 +250,27 @@ struct SelectionTests {
 
         _ = try await tier.search(intent: "roll back the last deploy", limit: 5)
 
-        #expect(session.receivedPrompts == [ExpectedSelectionPrompt.request(for: "roll back the last deploy")])
+        let request = ExpectedSelectionPrompt.request(for: "roll back the last deploy", ids: Self.catalog.ids)
+        #expect(session.receivedPrompts == [request])
+    }
+
+    @Test
+    func thePromptNamesOnlyTheIdsThatThePrefixShows() async throws {
+        // The prefix leaves out an id that has no summary block, so the list
+        // of id choices must leave it out too: the model must not read an id
+        // that it has no description for.
+        let session = ScriptedAgentSession([#"{"ids":["deploy"]}"#])
+        let config = SelectionConfig(model: { _ in session })
+        let tier = SelectionTier(
+            catalog: CatalogWithAnUnsummarizedID(),
+            config: config,
+            onDiagnostic: { _ in }
+        )
+
+        _ = try await tier.search(intent: "ship the release", limit: 5)
+
+        let request = ExpectedSelectionPrompt.request(for: "ship the release", ids: ["deploy"])
+        #expect(session.receivedPrompts == [request])
     }
 
     // MARK: - Summary vs full block separation
@@ -634,5 +654,20 @@ struct SelectionTests {
         let enumIds = try SelectionSchemaTestSupport.enumIds(in: schema)
 
         #expect(enumIds.isEmpty)
+    }
+}
+
+/// A catalog with two ids. The id `deploy` has a summary block. The id
+/// `archived` has a block but no summary block, so the assembled prefix
+/// leaves it out.
+private struct CatalogWithAnUnsummarizedID: SelectionCatalog {
+    let ids = ["deploy", "archived"]
+
+    func summaryBlock(forID id: String) -> String? {
+        id == "deploy" ? "ships containers to a cluster" : nil
+    }
+
+    func block(forID id: String) -> String? {
+        ids.contains(id) ? "the full \(id) block" : nil
     }
 }

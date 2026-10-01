@@ -291,7 +291,7 @@ struct SearcherTests {
 
         let prompt = try #require(session.receivedPrompts.first)
         #expect(prompt.contains("<candidate>\nid: glob\n"))
-        #expect(prompt.hasSuffix(ExpectedSelectionPrompt.request(for: "find files by name")))
+        #expect(prompt.hasSuffix(ExpectedSelectionPrompt.request(for: "find files by name", ids: Self.toolItems.map(\.id))))
     }
 
     @Test

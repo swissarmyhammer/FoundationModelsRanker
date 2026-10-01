@@ -28,8 +28,24 @@ comments:
     - evidence: no files changed. `swift test --package-path IntegrationTests --filter FunctionCatalogRealModelTests` x3 in sequence: 10/10, 10/10, 10/10 passed (30 of 30, 0 issues). `swift test`: 302 tests in 24 suites passed. `swift test --package-path IntegrationTests`: 6 tests in 6 suites passed. The only warning in each build is the toolchain line "missing creator for mutated node" for the mlx-swift_Cmlx.bundle, which comes from the build system for a dependency, not from this package's sources.
     - next: review of the recorded measurement.
   timestamp: 2026-10-01T14:45:54.861526+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m3vz2j442wzvq3kwh3ttkpwk
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 7f1f2b5). 0 findings, 0 confirmed, 0 refuted. The commit changes 4 files. All 4 files are in .kanban/, and .reviewignore excludes them. No code changed.
+    - next: none. The task is in done.
+  timestamp: 2026-10-01T14:49:40.228744+00:00
+- actor: claude-code
+  id: 01m3vz2tk9c974g8c7gv7taxh8
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: no-change — measurement only, 30 of 30 on the system model
+    - test: green — swift test 302 passed; IntegrationTests 6 passed
+    - commit: 7f1f2b5 (.kanban files only)
+    - review: clean — 0 findings
+  timestamp: 2026-10-01T14:49:48.905357+00:00
+position_column: done
+position_ordinal: b280
 title: Measure the function-catalog suite on the system model with the exact-id preamble
 ---
 ## What

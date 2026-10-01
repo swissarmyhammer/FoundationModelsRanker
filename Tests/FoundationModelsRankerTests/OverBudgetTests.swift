@@ -181,8 +181,9 @@ struct OverBudgetTests {
         #expect(session.forkCount == Self.expectedRuns.count)
         // A live session takes no new instructions, so each prompt carries
         // its own run's prefix above the intent, and no other run's.
-        let request = ExpectedSelectionPrompt.request(for: "alpha")
-        let expectedPrompts = Self.expectedRuns.map { "\(Self.prefix(for: $0))\n\n\(request)" }
+        let expectedPrompts = Self.expectedRuns.map { run in
+            "\(Self.prefix(for: run))\n\n\(ExpectedSelectionPrompt.request(for: "alpha", ids: run))"
+        }
         #expect(session.receivedPrompts == expectedPrompts)
     }
 
@@ -197,8 +198,8 @@ struct OverBudgetTests {
         // A factory session already holds its run's prefix as instructions,
         // so each prompt carries the same `<request>` block and exact-id
         // line, exactly as the under-budget factory prompt does.
-        let request = ExpectedSelectionPrompt.request(for: "alpha")
-        #expect(session.receivedPrompts == Self.expectedRuns.map { _ in request })
+        let expectedPrompts = Self.expectedRuns.map { run in ExpectedSelectionPrompt.request(for: "alpha", ids: run) }
+        #expect(session.receivedPrompts == expectedPrompts)
     }
 
     // MARK: - One-off sessions: no caching, no fork

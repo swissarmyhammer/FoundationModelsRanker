@@ -51,10 +51,11 @@ import Foundation
 /// **Where the prefix goes** follows `SelectionConfig.sessionSource`. A
 /// `.factory` source seeds the prefix as each session's instructions, so the
 /// prompt carries only the request part: the intent in a `<request>` block,
-/// and a line that asks for the exact ids. A `.session` source hands over
+/// and a line that asks for the exact ids and names the ids of the prompt's
+/// candidates as the only choices. A `.session` source hands over
 /// one live session, which takes no new instructions: the tier forks that
 /// session for each prompt and carries the prefix above the same request
-/// part instead (`prompt(prefix:intent:)`). Either way the model sees the
+/// part instead (`prompt(prefix:intent:ids:)`). Either way the model sees the
 /// same prefix, and reads the intent as a request to select for.
 ///
 /// **IDs only**: the guided output is
@@ -78,6 +79,12 @@ public actor SelectionTier {
     /// `assemblePrefix(preamble:catalog:)`, precomputed once at `init` since
     /// `catalog` never changes for this tier's lifetime.
     private let assembledPrefix: String
+
+    /// The ids that `assembledPrefix` shows, in catalog order: each catalog
+    /// id that has a summary block. The under-budget prompt names these ids
+    /// as the only choices (`prompt(prefix:intent:ids:)`). Precomputed once
+    /// at `init`, like `assembledPrefix`.
+    private let assembledIDs: [String]
 
     /// `catalog.ids` split into the runs the over-budget path prompts, one
     /// prompt per run (`candidateRuns(preamble:catalog:limit:)`).
@@ -104,10 +111,18 @@ public actor SelectionTier {
     /// and the request part of a `.session` prompt.
     private static let partSeparator = "\n\n"
 
-    /// The last line of each prompt, below the `<request>` block. It repeats
-    /// the exact-id rule of `SelectionConfig.selectionDefault` beside the
-    /// intent, where the model reads it last.
+    /// The start of the last line of each prompt, below the `<request>`
+    /// block. It repeats the exact-id rule of
+    /// `SelectionConfig.selectionDefault` beside the intent, where the model
+    /// reads it last.
     private static let exactIDsLine = "Answer with the exact ids of the chosen candidates."
+
+    /// The text after `exactIDsLine` that comes before the list of the ids
+    /// of the prompt's candidates (`idChoices(_:)`).
+    private static let idChoicesLead = "Choose only from these ids: "
+
+    /// The text between two ids in the list of `idChoices(_:)`.
+    private static let idChoicesSeparator = ", "
 
     /// Creates a selection tier over `catalog`, using `config`'s session
     /// source, preamble, and budget.
@@ -124,6 +139,7 @@ public actor SelectionTier {
         self.catalog = catalog
         self.config = config
         self.assembledPrefix = Self.assemblePrefix(preamble: config.preamble, catalog: catalog)
+        self.assembledIDs = catalog.ids.filter { catalog.summaryBlock(forID: $0) != nil }
         self.candidateRuns = Self.candidateRuns(
             preamble: config.preamble,
             catalog: catalog,
@@ -211,7 +227,7 @@ public actor SelectionTier {
 
         let child = try await cachedRootSession().fork()
         let selection = try await child.respond(
-            to: prompt(prefix: assembledPrefix, intent: intent),
+            to: prompt(prefix: assembledPrefix, intent: intent, ids: assembledIDs),
             generating: Selection.self
         )
         return matches(forIDs: selection.ids, limit: limit)
@@ -223,7 +239,7 @@ public actor SelectionTier {
     /// A `.factory` source makes the root from the full assembled prefix, so
     /// the prefix is the root's instructions. A `.session` source is the
     /// root as it stands: a live session takes no new instructions, so
-    /// `prompt(prefix:intent:)` carries the prefix instead. Either root is
+    /// `prompt(prefix:intent:ids:)` carries the prefix instead. Either root is
     /// forked once per call by `search(intent:limit:)`.
     ///
     /// Searches that start while the root is not ready await the same
@@ -274,7 +290,7 @@ public actor SelectionTier {
     ///
     /// Every prompt has the same request part, whatever the session source:
     /// the intent between a `<request>` line and a `</request>` line, then
-    /// `exactIDsLine`.
+    /// one line with `exactIDsLine` and `idChoices(_:)`.
     ///
     /// The `<request>` block tells the model that the message is a request
     /// to *select candidates for*, not a task to *do*. Many search intents
@@ -291,6 +307,20 @@ public actor SelectionTier {
     /// it answers asks for the exact ids. A real model shortened a URI id to
     /// its last path part when no text asked for the exact id.
     ///
+    /// `idChoices(_:)` follows it on the same line and names the ids of the
+    /// prompt's candidates as the only choices (card `^5ex1cd0`). Without
+    /// the list, the on-device system model made up ids from a verb of the
+    /// request and the form of the catalog ids. Over the nine-function
+    /// catalog of `FunctionCatalogRealModelTests`, one cold session for each
+    /// search, "write file, edit file, create file" answered the made-up id
+    /// `files.create` in 3 of 20 searches, and "file operations: create,
+    /// write, append, delete, move" answered `files.delete` in 1 of 20.
+    /// Five changes to the preamble and the `Selection.ids` guide each moved
+    /// the made-up id to a different query: "how do I list or delete a
+    /// branch" over `FullMonty`'s catalog answered the made-up id `delete`
+    /// in up to 20 of 20 searches. With the list, these three queries
+    /// answered no made-up id in 20 searches each.
+    ///
     /// The request part is where the two sources stop being alike. A
     /// `.factory` source already seeded `prefix` as the session's
     /// instructions, so its prompt is the request part alone. A `.session`
@@ -302,15 +332,26 @@ public actor SelectionTier {
     ///   - prefix: this call's assembled candidate prefix -- the whole
     ///     catalog under budget, one run's candidates over budget.
     ///   - intent: the plain-language search intent.
+    ///   - ids: the candidate ids in `prefix`, in prefix order.
     /// - Returns: the prompt text to send.
-    private func prompt(prefix: String, intent: String) -> String {
-        let request = "<request>\n\(intent)\n</request>\n\(Self.exactIDsLine)"
+    private func prompt(prefix: String, intent: String, ids: [String]) -> String {
+        let request = "<request>\n\(intent)\n</request>\n\(Self.exactIDsLine) \(Self.idChoices(ids))"
         switch config.sessionSource {
         case .factory:
             return request
         case .session:
             return "\(prefix)\(Self.partSeparator)\(request)"
         }
+    }
+
+    /// The sentence that names `ids` as the only ids the model can answer
+    /// with: `idChoicesLead`, then `ids` with `idChoicesSeparator` between
+    /// two ids, then a full stop.
+    ///
+    /// - Parameter ids: the candidate ids of one prompt, in prefix order.
+    /// - Returns: the sentence.
+    private static func idChoices(_ ids: [String]) -> String {
+        "\(idChoicesLead)\(ids.joined(separator: idChoicesSeparator))."
     }
 
     // MARK: - Over budget: one prompt per run of candidates
@@ -334,7 +375,7 @@ public actor SelectionTier {
             let prefix = Self.assemblePrefix(preamble: config.preamble, ids: run, catalog: catalog)
             let session = try await oneOffSession(instructions: prefix)
             let selection = try await session.respond(
-                to: prompt(prefix: prefix, intent: intent),
+                to: prompt(prefix: prefix, intent: intent, ids: run),
                 generating: Selection.self
             )
             selectedIDs.append(contentsOf: selection.ids)

@@ -32,7 +32,8 @@ public enum SelectionSessionSource: Sendable {
     /// Makes a new session for each assembled prefix. The prefix becomes the
     /// session's instructions, so the prompt carries only the request part:
     /// the intent in the `<request>` block that every prompt puts the intent
-    /// in, and the line that asks for the exact ids.
+    /// in, and the line that asks for the exact ids and names the ids of the
+    /// prompt's candidates as the only choices.
     ///
     /// The factory can `await` and `throw`: a session can come from a pooled
     /// model that loads at the first request. An error from the factory
