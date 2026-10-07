@@ -7,3 +7,4 @@
 .swiftpm/
 .DS_Store
 Package.resolved
+.kanban/*.log
