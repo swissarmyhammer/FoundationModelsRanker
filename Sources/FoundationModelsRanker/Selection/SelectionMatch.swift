@@ -1,12 +1,9 @@
-// New to FoundationModelsRanker -- generalizes
-// FoundationModelsMetadataRegistry's own
-// `Sources/FoundationModelsMetadataRegistry/Catalog/Match.swift`
-// (`Match<Item>`) by dropping the generic catalog item: a `SelectionTier`
-// only ever needs a matched id, its verbatim catalog block, and the score/
-// signals that produced the match -- never the catalog's own item type,
-// which FoundationModelsRanker's narrow `SelectionCatalog` protocol never exposes.
-// Consumers wrap `SelectionMatch` into their own richer result types when
-// they need the original item back.
+// A match carries no generic catalog item: a `SelectionTier` only ever
+// needs a matched id, its verbatim catalog block, and the score/signals
+// that produced the match -- never the catalog's own item type, which the
+// narrow `SelectionCatalog` protocol never exposes. Consumers wrap
+// `SelectionMatch` into their own richer result types when they need the
+// original item back.
 
 /// One retrieval or selection result over a `SelectionCatalog`:
 /// the catalog's own id and verbatim block, plus a score in `[0, 1]` and,

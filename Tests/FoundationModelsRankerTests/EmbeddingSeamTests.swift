@@ -3,10 +3,7 @@ import FoundationModelsRanker
 import Testing
 
 /// Tests for the embedding seam: `FakeEmbedder`'s determinism, vector
-/// shape, and failure injection. Ported from CodeContextKit's
-/// `Tests/CodeContextKitTests/EmbeddingSeamTests.swift` -- the
-/// primitive-level cases only; its `TreeSitterWorker` integration cases are
-/// specific to CodeContextKit's GRDB corpus and stay there.
+/// shape, and failure injection.
 struct EmbeddingSeamTests {
     private struct SampleError: Error {}
 
@@ -14,8 +11,8 @@ struct EmbeddingSeamTests {
     func fakeEmbedderProducesTheSameVectorForTheSameTextEveryCall() async throws {
         let embedder = FakeEmbedder(vectorLength: 16)
 
-        let first = try await embedder.embed(["func add() {}"])
-        let second = try await embedder.embed(["func add() {}"])
+        let first = try await embedder.embed(texts: ["func add() {}"])
+        let second = try await embedder.embed(texts: ["func add() {}"])
 
         #expect(first == second)
     }
@@ -24,7 +21,7 @@ struct EmbeddingSeamTests {
     func fakeEmbedderProducesDifferentVectorsForDifferentText() async throws {
         let embedder = FakeEmbedder(vectorLength: 16)
 
-        let vectors = try await embedder.embed(["func add() {}", "func subtract() {}"])
+        let vectors = try await embedder.embed(texts: ["func add() {}", "func subtract() {}"])
 
         #expect(vectors[0] != vectors[1])
     }
@@ -33,7 +30,7 @@ struct EmbeddingSeamTests {
     func fakeEmbedderProducesL2NormalizedVectorsOfTheConfiguredLength() async throws {
         let embedder = FakeEmbedder(vectorLength: 12)
 
-        let vectors = try await embedder.embed(["func add() {}", "struct Sample {}"])
+        let vectors = try await embedder.embed(texts: ["func add() {}", "struct Sample {}"])
 
         for vector in vectors {
             #expect(vector.count == 12)
@@ -47,7 +44,7 @@ struct EmbeddingSeamTests {
         let embedder = FakeEmbedder(vectorLength: 8, failure: SampleError())
 
         await #expect(throws: SampleError.self) {
-            _ = try await embedder.embed(["func add() {}"])
+            _ = try await embedder.embed(texts: ["func add() {}"])
         }
     }
 }

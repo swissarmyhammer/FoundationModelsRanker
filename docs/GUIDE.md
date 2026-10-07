@@ -3,105 +3,63 @@
 The [README](../README.md) shows the zero-config call. This guide shows the
 arguments that change it.
 
-## Sessions
+## Models
 
-Any `LanguageModelSession` works. The code never hardcodes the model. If you
-already hold a session, give that session:
+`model:` takes any FoundationModels `LanguageModel`. The default is
+`SystemLanguageModel.default`, the on-device system model. The code never
+hardcodes another model. For each prompt, the selection tier makes a new
+`LanguageModelSession` on the model, with the candidate list as its
+instructions, and gets the ids through the native guided generation of the
+session. No prompt sees the turns of another prompt.
+
+A `PooledModel` of FoundationModelsExtras is a `LanguageModel`. It loads its
+MLX model at the first prompt, and runs the prompts of all its users one at a
+time:
 
 ```swift
-import FoundationModels
+import FoundationModelsExtras
+
+let searcher = try await Searcher(items, model: PooledModel(ref: "mlx-community/Qwen3-4B-4bit"))
+```
+
+An error from the model comes out of `search`. Give `model: nil` to turn
+selection off.
+
+## Embedders
+
+`embedder:` takes any `PooledEmbedding` of FoundationModelsExtras. That
+protocol is `embed(texts:)`, and nothing else. Each vector carries its own
+length, so an embedder does not declare one. With an embedder, cosine
+similarity joins the fused ranking. A `PooledEmbedder` is a
+`PooledEmbedding`. It loads its MLX model at the first call:
+
+```swift
+import FoundationModelsExtras
 
 let searcher = try await Searcher(
     items,
-    session: LanguageModelSession(model: .default, instructions: "Pick the best tools.")
+    embedder: PooledEmbedder(ref: "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ")
 )
 ```
 
-One live session shares one transcript with all the calls.
-`LanguageModelSession.fork()` gives back `self`, because the SDK has no
-branch primitive, so each call adds turns to the same session. Give a
-session factory instead when each call must get a fresh context. The
-zero-config call uses a factory too (`Searcher.defaultSessionFactory`):
-
-```swift
-import FoundationModels
-
-let searcher = try await Searcher(items, session: { instructions in
-    LanguageModelSession(model: .default, instructions: instructions)
-})
-```
-
-The factory can `await` and `throw`. Use this when a session comes from a
-model pool that loads the model at the first request. An error from the
-factory comes out of `search`. The tier awaits the factory one time for its
-cached root session, and one time for each prompt when the catalog is too
-large for one prompt:
-
-```swift
-let searcher = try await Searcher(items, session: { instructions in
-    try await pool.session(instructions: instructions)
-})
-```
-
-A `PooledSession` of FoundationModelsExtras is already an `AgentSession`.
-Its `fork()` continues the transcript with its own hold of the model, so the
-cached root session sends the catalog one time, and each search runs on a
-fork that does not see the other searches.
-
-## Bring your own embedder
-
-`TextEmbedding` is `embed(_:)`. Nothing else. Each vector carries its own
-length, so an embedder does not declare one. Write a
-conformer around your own embedding backend and give it to `Searcher` as
-`embedder:`. Cosine similarity then joins the fused ranking. A
-`PooledEmbedder` of FoundationModelsExtras is already a `TextEmbedding`, so
-it needs no conformer. Every other embedding backend connects this way:
-
-```swift
-import FoundationModelsRanker
-
-struct MyEmbedder: TextEmbedding {
-    /// Gives the texts to your own embedding backend.
-    func embed(_ texts: [String]) async throws -> [[Float]] {
-        try await myBackend.embed(texts)
-    }
-}
-
-let searcher = try await Searcher(items, embedder: MyEmbedder())
-```
-
-`myBackend` is your own embedding service: a local model, or a network call.
-[`Examples/FullMontyCore/DemoEmbedder.swift`](../Examples/FullMontyCore/DemoEmbedder.swift)
-holds a runnable conformer that needs no model, no GPU, and no network.
-
-## Guided output
-
-`SelectionTier.idEnumSchema(ids:)` gives back a JSON Schema source string.
-The schema limits the answer to the ids you give it, so the model cannot
-invent an id. If your model backend accepts a JSON Schema grammar, give the
-string to that backend:
-
-```swift
-import FoundationModelsRanker
-
-let schema = try SelectionTier.idEnumSchema(ids: items.map(\.id))
-```
+The runnable example in [`Examples/FullMonty`](../Examples/FullMonty) gives a
+`PooledEmbedder` as `embedder:` and a `PooledModel` as `model:`.
 
 ## Modes
 
 `mode:` selects the tier that `search(_:limit:)` uses. The default is
 `.auto`.
 
-- `.retrieval`: the fused BM25 + trigram (+ cosine) ranking only. No session
+- `.retrieval`: the fused BM25 + trigram (+ cosine) ranking only. No model
   is used. Results carry the real fused `score` and the per-signal
   `.signals`.
 - `.selection`: one prompt asks the agent to pick from the whole item list.
-  It throws if no `session:` is set. No retrieval runs: the picks come back
-  in the agent's order, each with an order `score` (the first pick `1.0`,
-  the n-th `1 / n`) and no `.signals`. When the item list does not fit the
+  It throws if `model:` is `nil`. No retrieval runs: the picks come back in
+  the agent's order, each with an order `score` (the first pick `1.0`, the
+  n-th `1 / n`) and no `.signals`. When the item list does not fit the
   selection budget, the tier splits it into several prompts, and each item
   goes into exactly one of them. The answers are merged in prompt order.
-- `.auto`: selection when a session is set, retrieval when no session is set.
+- `.auto`: selection when a model is set, retrieval when `model:` is `nil`.
   The zero-config call in the README uses selection.
 
 ## Graceful degradation
@@ -114,5 +72,5 @@ Every fallback is reported. No fallback is silent:
   drops that search to keyword-only retrieval and reports
   `.embeddingUnavailable`. This applies to `Searcher` and to
   `StreamingSearchCorpus`.
-- `mode: .selection` with no session throws `SelectionTierUnavailable`.
-- `mode: .auto` with no session uses retrieval and does not fail.
+- `mode: .selection` with no model throws `SelectionTierUnavailable`.
+- `mode: .auto` with no model uses retrieval and does not fail.

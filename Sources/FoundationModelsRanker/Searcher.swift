@@ -1,30 +1,15 @@
-// New to FoundationModelsRanker -- the package's one-call facade:
-// composes the phase-2 `HybridRanker` (retrieval: BM25 + trigram + optional
-// cosine, fused by RRF) with the phase-3 `SelectionTier` (agent final
-// selection) over an in-memory `SelectionCatalog` built from the caller's
-// `Searchable` items. No source file to port -- neither CodeContextKit nor
-// FoundationModelsMetadataRegistry ships a facade this shape; FMR's own
-// `MetadataSearcher` is the closest structural precedent (its `Weights`,
-// `SearchMode`, `SelectionTierUnavailable`, and retrieval/selection/auto
-// dispatch, `Sources/FoundationModelsMetadataRegistry/MetadataSearcher.swift`
-// + `SearchMode.swift`), generalized here from a generic `Item:
-// SearchableMetadata` index to FoundationModelsRanker's narrower `Searchable`/
-// `SelectionCatalog` seams, and from an actor (FMR's index is mutable,
-// hot-reloadable) to a plain value type (`Searcher`'s catalog is fixed for
-// its lifetime -- no hot reload in this facade).
+// The package's one-call facade. It composes `HybridRanker` (retrieval:
+// BM25 + trigram + optional cosine, fused by RRF) with `SelectionTier`
+// (agent final selection) over an in-memory `SelectionCatalog` built from
+// the caller's `Searchable` items. `Searcher` is a plain value type: its
+// catalog is fixed for its lifetime, and it has no hot reload.
 //
-// SDK finding (carried from the `LanguageModelSession:
-// AgentSession` conformance task, ^2gk4k4r, and documented at length in
-// `Selection/LanguageModelSessionSupport.swift`): the installed Xcode-beta
-// macOS 27 SDK's `FoundationModels.swiftinterface` exposes only
-// `SystemLanguageModel.default`, not `.fast`. The preferred shipped default
-// is the `.fast` variant of the on-device system model, but that is
-// guidance, not a requirement. This facade's zero-config
-// default session factory therefore uses `.default` in `.fast`'s place;
-// nothing here assumes `.fast` exists, so a future SDK shipping it needs no
-// changes beyond swapping this one constant.
+// The default model is `SystemLanguageModel.default`, the on-device system
+// model. The macOS 27 SDK has no `.fast` variant of that model, so the
+// default does not name one.
 
 import FoundationModels
+import FoundationModelsExtras
 
 /// The package's front door: "a list of things to search, then
 /// a query" is the whole API.
@@ -34,28 +19,16 @@ import FoundationModels
 /// built once from `items` at `init`.
 ///
 /// Every knob but `items` is optional: `embedder:` adds the cosine signal
-/// (every item's `text` is embedded once, here, at `init`); `session:`
-/// swaps the selection model -- defaults to the on-device system model, and
-/// is never hardcoded beyond that default; `weights:` and `preamble:` tune
+/// (every item's `text` is embedded once, here, at `init`); `model:` swaps
+/// the selection model -- defaults to the on-device system model, and is
+/// never hardcoded beyond that default; `weights:` and `preamble:` tune
 /// the retrieval and selection tiers directly; `mode:` picks which tier
 /// answers `search(_:limit:)`.
 ///
-/// `session:` has two front doors, one for each kind of caller. A caller
-/// that can make a session for each prefix gives a **factory closure**
-/// (`@Sendable (String) async throws -> any AgentSession`): a `LanguageModelSession`
-/// factory, or a factory for a conformer the caller writes. The assembled
-/// candidate prefix becomes each new session's instructions. A caller that
-/// already holds **one live session** gives that session itself
-/// (`any AgentSession`). A live session takes no new instructions, so the
-/// prompt carries the prefix instead. The model sees the same prefix
-/// either way.
-///
-/// The instance front door shares one transcript across all calls.
-/// `LanguageModelSession.fork()` gives back `self`, because the SDK has no
-/// branch primitive (`Selection/LanguageModelSessionSupport.swift` records
-/// why), so each call adds turns to the same session instead of branching
-/// into an isolated child, and many calls make the context grow. Use the
-/// factory front door when each call must get a fresh context.
+/// `model:` takes any FoundationModels `LanguageModel`, for example
+/// `SystemLanguageModel.default` or a `PooledModel` of
+/// FoundationModelsExtras. `embedder:` takes any `PooledEmbedding` of
+/// FoundationModelsExtras, for example a `PooledEmbedder`.
 ///
 /// Degradation is graceful, never silent: no `embedder` (or
 /// a query embed that itself fails, or a query vector whose length is
@@ -63,44 +36,28 @@ import FoundationModels
 /// retrieval with `.embeddingUnavailable` reported via `onDiagnostic` on
 /// every such search. A `weights.cosine` of `0.0` is different -- a
 /// caller's deliberate opt-out of the signal, not a degradation -- so it
-/// skips cosine (and its embed call) without reporting anything, mirroring
-/// FoundationModelsMetadataRegistry's own `computeSignals`'s "a zero weight
-/// means the caller doesn't want the signal" rule. `mode: .selection` with
-/// no session configured (`session: nil`) throws
+/// skips cosine (and its embed call) without reporting anything: a zero
+/// weight means the caller does not want the signal. `mode: .selection` with
+/// no model configured (`model: nil`) throws
 /// `SelectionTierUnavailable` rather than silently retrieving instead;
-/// `mode: .auto` (the default) silently prefers selection when a session is
-/// configured, retrieval otherwise -- mirroring FMR's own `.auto`
-/// semantics.
+/// `mode: .auto` (the default) silently prefers selection when a model is
+/// configured, retrieval otherwise.
 public struct Searcher: Sendable {
     /// Which tier `search(_:limit:)` answers a query with.
     public enum Mode: Sendable {
         /// `HybridRanker`'s fused BM25 + trigram + (optional cosine)
-        /// ranking only -- no session, no tokens.
+        /// ranking only -- no model, no tokens.
         case retrieval
 
         /// The agent selects among candidates (`SelectionTier`).
         ///
-        /// Throws `SelectionTierUnavailable` when no session is configured
-        /// (`session: nil`).
+        /// Throws `SelectionTierUnavailable` when no model is configured
+        /// (`model: nil`).
         case selection
 
-        /// Selection when a session is configured, retrieval otherwise --
+        /// Selection when a model is configured, retrieval otherwise --
         /// the default.
         case auto
-    }
-
-    /// This facade's zero-config default session factory: the on-device
-    /// system model.
-    ///
-    /// See this file's header for why `.default`, not `.fast`.
-    ///
-    /// `public`, not `private`: a default argument value on a `public`
-    /// initializer must be at least as visible as the initializer itself.
-    /// Exposed as a documented seam (rather than an unnamed closure
-    /// literal) so a caller can also pass it explicitly, e.g. to restore
-    /// the on-device default after overriding `session:` conditionally.
-    public static let defaultSessionFactory: @Sendable (String) async throws -> any AgentSession = { instructions in
-        LanguageModelSession(model: .default, instructions: instructions)
     }
 
     /// This facade's precomputed retrieval state and the knobs
@@ -111,7 +68,7 @@ public struct Searcher: Sendable {
     /// Which tier `search(_:limit:)` uses.
     private let mode: Mode
 
-    /// This facade's selection tier, or `nil` when `session: nil` left
+    /// This facade's selection tier, or `nil` when `model: nil` left
     /// selection unavailable.
     private let selectionTier: SelectionTier?
 
@@ -128,19 +85,12 @@ public struct Searcher: Sendable {
     ///     otherwise have used it (whenever `weights.cosine > 0.0`; a
     ///     caller who sets `weights.cosine` to `0.0` has already opted out
     ///     of the signal, so that combination reports nothing).
-    ///   - session: makes a selection session for each assembled candidate
-    ///     prefix -- the seam that plugs in any `LanguageModelSession`
-    ///     model, or any other `AgentSession` conformer the caller writes --
-    ///     and is never hardcoded. The prefix becomes each new session's
-    ///     instructions, so each call can get a fresh context. The closure
-    ///     can `await` (for example, while a pooled model loads at the first
-    ///     request) and `throw`; an error from it comes out of
-    ///     `search(_:limit:)`. A synchronous closure also works. Defaults to
-    ///     the on-device system model; pass `nil` explicitly to leave
-    ///     selection unavailable (`mode: .selection` then throws
-    ///     `SelectionTierUnavailable`; `.auto` degrades to retrieval). A
-    ///     caller that already holds one live session gives that session
-    ///     to the initializer that takes an `any AgentSession` instead.
+    ///   - model: the model that answers each selection prompt. The
+    ///     selection tier makes a new `LanguageModelSession` on it for each
+    ///     prompt. Defaults to `SystemLanguageModel.default`; pass `nil`
+    ///     explicitly to leave selection unavailable (`mode: .selection`
+    ///     then throws `SelectionTierUnavailable`; `.auto` degrades to
+    ///     retrieval).
     ///   - weights: the per-signal fusion weights for retrieval. Defaults
     ///     to `1.0` for every signal.
     ///   - preamble: the selection guidance prepended to the assembled
@@ -148,163 +98,39 @@ public struct Searcher: Sendable {
     ///   - mode: which tier `search(_:limit:)` uses. Defaults to `.auto`.
     ///   - onDiagnostic: called for every diagnostic this facade or its
     ///     selection tier emits. Defaults to doing nothing.
-    /// - Throws: whatever `embedder.embed(_:)` throws while embedding
+    /// - Throws: whatever `embedder.embed(texts:)` throws while embedding
     ///   `items` at `init`.
     public init<Item: Searchable>(
         _ items: [Item],
-        embedder: (any TextEmbedding)? = nil,
-        session: (@Sendable (String) async throws -> any AgentSession)? = Searcher.defaultSessionFactory,
+        embedder: (any PooledEmbedding)? = nil,
+        model: (any LanguageModel)? = SystemLanguageModel.default,
         weights: SignalWeights = SignalWeights(),
         preamble: String = .selectionDefault,
         mode: Mode = .auto,
         onDiagnostic: @escaping @Sendable (RankDiagnostic) -> Void = { _ in }
-    ) async throws {
-        try await self.init(
-            items: items,
-            embedder: embedder,
-            sessionSource: session.map { SelectionSessionSource.factory($0) },
-            weights: weights,
-            preamble: preamble,
-            mode: mode,
-            onDiagnostic: onDiagnostic
-        )
-    }
-
-    /// Builds a searcher over `items` that asks one live session for every
-    /// selection.
-    ///
-    /// The front door for a caller that already holds a session -- a
-    /// `LanguageModelSession`, or any other `AgentSession` conformer -- and
-    /// wants no factory closure around it. A live session takes no new
-    /// instructions, so the selection tier forks this session for each call
-    /// and carries the assembled candidate prefix in the prompt.
-    ///
-    /// This form shares one transcript across all calls when the session
-    /// cannot really branch. `LanguageModelSession.fork()` gives back
-    /// `self`, because the SDK has no branch primitive
-    /// (`Selection/LanguageModelSessionSupport.swift` records why), so each
-    /// call adds turns to the same session, and many calls make the context
-    /// grow. Give a factory closure to the initializer above when each call
-    /// must get a fresh context.
-    ///
-    /// - Parameters:
-    ///   - items: the things to search: at minimum an id and the text that
-    ///     describes it (`SearchItem`, or any `Searchable` conformer).
-    ///     Duplicate ids keep the first occurrence; later ones are dropped.
-    ///   - embedder: embeds every item's `text` once, here, at `init`, and
-    ///     the query at every `search(_:limit:)` call -- adds the cosine
-    ///     signal to retrieval. `nil` (the default) skips cosine entirely
-    ///     and reports `.embeddingUnavailable` on every search that would
-    ///     otherwise have used it (whenever `weights.cosine > 0.0`; a
-    ///     caller who sets `weights.cosine` to `0.0` has already opted out
-    ///     of the signal, so that combination reports nothing).
-    ///   - session: the live session every selection call forks a child
-    ///     from -- the seam that takes a `LanguageModelSession` the caller
-    ///     already holds, or any other `AgentSession` conformer, and is
-    ///     never hardcoded. All calls share this session's transcript when
-    ///     its `fork()` gives back `self`.
-    ///   - weights: the per-signal fusion weights for retrieval. Defaults
-    ///     to `1.0` for every signal.
-    ///   - preamble: the selection guidance prepended to the assembled
-    ///     prefix. Defaults to `.selectionDefault`.
-    ///   - mode: which tier `search(_:limit:)` uses. Defaults to `.auto`.
-    ///   - onDiagnostic: called for every diagnostic this facade or its
-    ///     selection tier emits. Defaults to doing nothing.
-    /// - Throws: whatever `embedder.embed(_:)` throws while embedding
-    ///   `items` at `init`.
-    public init<Item: Searchable>(
-        _ items: [Item],
-        embedder: (any TextEmbedding)? = nil,
-        session: any AgentSession,
-        weights: SignalWeights = SignalWeights(),
-        preamble: String = .selectionDefault,
-        mode: Mode = .auto,
-        onDiagnostic: @escaping @Sendable (RankDiagnostic) -> Void = { _ in }
-    ) async throws {
-        try await self.init(
-            items: items,
-            embedder: embedder,
-            sessionSource: .session(session),
-            weights: weights,
-            preamble: preamble,
-            mode: mode,
-            onDiagnostic: onDiagnostic
-        )
-    }
-
-    /// Builds a searcher from an already-chosen session source -- the one
-    /// place both public initializers do the work, so the two front doors
-    /// cannot drift apart.
-    ///
-    /// - Parameters:
-    ///   - items: the things to search.
-    ///   - embedder: embeds every item's `text` here, at `init`, and the
-    ///     query at every `search(_:limit:)` call, or `nil` for
-    ///     keyword-only retrieval.
-    ///   - sessionSource: where the selection tier gets its sessions, or
-    ///     `nil` to leave selection unavailable.
-    ///   - weights: the per-signal fusion weights for retrieval.
-    ///   - preamble: the selection guidance prepended to the assembled
-    ///     prefix.
-    ///   - mode: which tier `search(_:limit:)` uses.
-    ///   - onDiagnostic: called for every diagnostic this facade or its
-    ///     selection tier emits.
-    /// - Throws: whatever `embedder.embed(_:)` throws while embedding
-    ///   `items` at `init`.
-    private init<Item: Searchable>(
-        items: [Item],
-        embedder: (any TextEmbedding)?,
-        sessionSource: SelectionSessionSource?,
-        weights: SignalWeights,
-        preamble: String,
-        mode: Mode,
-        onDiagnostic: @escaping @Sendable (RankDiagnostic) -> Void
     ) async throws {
         let corpus = SearchCorpus(items: items)
         let itemEmbeddings: [[Float]]?
         if let embedder {
-            itemEmbeddings = try await embedder.embed(corpus.ids.map { corpus.block(forID: $0) ?? "" })
+            itemEmbeddings = try await embedder.embed(texts: corpus.ids.map { corpus.block(forID: $0) ?? "" })
         } else {
             itemEmbeddings = nil
         }
 
-        let engine = RetrievalEngine(
+        self.engine = RetrievalEngine(
             corpus: corpus,
             itemEmbeddings: itemEmbeddings,
             embedder: embedder,
             weights: weights,
             onDiagnostic: onDiagnostic
         )
-        self.engine = engine
         self.mode = mode
-
-        if let sessionSource {
-            self.selectionTier = SelectionTier(
+        self.selectionTier = model.map { model in
+            SelectionTier(
                 catalog: corpus,
-                config: Self.selectionConfig(sessionSource: sessionSource, preamble: preamble),
+                config: SelectionConfig(model: model, preamble: preamble),
                 onDiagnostic: onDiagnostic
             )
-        } else {
-            self.selectionTier = nil
-        }
-    }
-
-    /// Makes the selection tier's configuration for `sessionSource`.
-    ///
-    /// `SelectionConfig`'s own source-taking initializer is private, so this
-    /// picks the public initializer that stores the matching source.
-    ///
-    /// - Parameters:
-    ///   - sessionSource: where the selection tier gets its sessions.
-    ///   - preamble: the selection guidance prepended to the assembled
-    ///     prefix.
-    /// - Returns: the configuration that carries `sessionSource`.
-    private static func selectionConfig(sessionSource: SelectionSessionSource, preamble: String) -> SelectionConfig {
-        switch sessionSource {
-        case .factory(let makeSession):
-            return SelectionConfig(model: makeSession, preamble: preamble)
-        case .session(let session):
-            return SelectionConfig(session: session, preamble: preamble)
         }
     }
 
@@ -326,8 +152,8 @@ public struct Searcher: Sendable {
     ///   (`1 / rank`) with no `signals`; `.auto`'s resolution of whichever
     ///   of those applies.
     /// - Throws: `SelectionTierUnavailable` when `mode == .selection` and no
-    ///   session is configured (`session: nil`); otherwise whatever the
-    ///   underlying selection session throws.
+    ///   model is configured (`model: nil`); otherwise whatever the
+    ///   selection session of the model throws.
     public func search(_ query: String, limit: Int = 20) async throws -> [SelectionMatch] {
         switch mode {
         case .retrieval:
@@ -345,14 +171,11 @@ public struct Searcher: Sendable {
 }
 
 /// Thrown by `Searcher.search(_:limit:)` when `mode == .selection` and no
-/// session is configured (`Searcher.init(..., session: nil, ...)`) --
+/// model is configured (`Searcher.init(..., model: nil, ...)`) --
 /// requesting `.selection` explicitly without one fails loudly rather than
 /// silently substituting retrieval.
-///
-/// Mirrors FoundationModelsMetadataRegistry's own `SelectionTierUnavailable`
-/// (`Sources/FoundationModelsMetadataRegistry/MetadataSearcher.swift`).
 public struct SelectionTierUnavailable: Error, Sendable, Equatable {
-    /// Creates an error indicating that no selection session is configured.
+    /// Creates an error indicating that no selection model is configured.
     public init() {}
 }
 
@@ -375,7 +198,7 @@ private struct RetrievalEngine: Sendable {
 
     /// Embeds the *query* at search time for the cosine signal. `nil` means
     /// no cosine signal, ever, regardless of `weights.cosine`.
-    let embedder: (any TextEmbedding)?
+    let embedder: (any PooledEmbedding)?
 
     /// The per-signal fusion weights `HybridRanker` uses.
     let weights: SignalWeights
@@ -391,16 +214,12 @@ private struct RetrievalEngine: Sendable {
     /// `weights.cosine <= 0.0` short-circuits to `nil` with **no**
     /// diagnostic: a caller who zeroed the weight has already opted out of
     /// the signal, not hit a degradation, so there's nothing to embed or
-    /// warn about -- mirrors FoundationModelsMetadataRegistry's
-    /// `MetadataSearcher.computeSignals`'s "a zero weight means the caller
-    /// doesn't want the signal" rule. Otherwise, degrades to `nil`
+    /// warn about. Otherwise, degrades to `nil`
     /// (keyword-only) and *does* report `.embeddingUnavailable` whenever
     /// cosine was actually wanted but couldn't contribute: no
     /// `embedder`/`itemEmbeddings` available, embedding the query
     /// itself fails, or the query vector length is different from the
-    /// length of an item vector -- mirrors `MetadataSearcher
-    /// .computeCosineRanking`'s degradation, generalized to FoundationModelsRanker's
-    /// `HybridRanker` seam. `CosineSignal.scores` does the embed, the
+    /// length of an item vector. `CosineSignal.scores` does the embed, the
     /// checks, and the report, the same as for `StreamingSearchCorpus`.
     ///
     /// - Parameter query: the query to embed and score.

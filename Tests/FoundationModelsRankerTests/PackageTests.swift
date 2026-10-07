@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsExtras
 import FoundationModelsRanker
 import Testing
 
@@ -8,16 +9,16 @@ import Testing
     #expect(Bool(true))
 }
 
-/// Proves `TextEmbedding` is a complete seam on its own: a caller writes a
-/// conformer against the public protocol and hands it to `Searcher`, with no
-/// embedder adapter shipped by this package.
+/// Proves that `PooledEmbedding` of FoundationModelsExtras is a complete seam
+/// on its own: a caller writes a conformer against that public protocol and
+/// gives it to `Searcher` directly.
 ///
 /// This file imports `FoundationModelsRanker` without `@testable`, so
 /// `VowelCountEmbedder` reaches the public surface only -- the same surface
 /// an outside package gets. A cosine signal above zero, together with no
 /// `.embeddingUnavailable` diagnostic, shows the vectors reached
 /// `HybridRanker` and were actually fused in.
-@Test func aCallerSuppliedTextEmbeddingConformerDrivesTheCosineSignal() async throws {
+@Test func aCallerSuppliedPooledEmbeddingConformerDrivesTheCosineSignal() async throws {
     let items = [
         SearchItem(id: "grep", text: "Search file contents with regular expressions"),
         SearchItem(id: "glob", text: "Find files by name pattern, sorted by mtime"),
@@ -27,7 +28,7 @@ import Testing
     let searcher = try await Searcher(
         items,
         embedder: VowelCountEmbedder(),
-        session: nil,
+        model: nil,
         mode: .retrieval,
         onDiagnostic: recorder.record
     )
@@ -40,8 +41,8 @@ import Testing
     #expect(signals.cosine > 0.0)
 }
 
-/// A `TextEmbedding` conformer written the way a caller writes one: against
-/// the public protocol, with nothing but `embed(_:)`.
+/// A `PooledEmbedding` conformer written the way a caller writes one: against
+/// the public protocol, with nothing but `embed(texts:)`.
 ///
 /// Deliberately not `FakeEmbedder` (`Support/FakeEmbedder.swift`). That
 /// double exists to give other suites deterministic vectors; this type
@@ -53,11 +54,11 @@ import Testing
 /// normalized to unit length. That makes the vectors deterministic, free of
 /// any model or GPU, and different for texts that differ in their vowels --
 /// enough for a cosine score above zero.
-private struct VowelCountEmbedder: TextEmbedding {
+private struct VowelCountEmbedder: PooledEmbedding {
     /// The vowels each vector component counts, one component per vowel.
     private static let countedVowels: [Character] = ["a", "e", "i", "o", "u"]
 
-    func embed(_ texts: [String]) async throws -> [[Float]] {
+    func embed(texts: [String]) async throws -> [[Float]] {
         texts.map(Self.vector(forText:))
     }
 

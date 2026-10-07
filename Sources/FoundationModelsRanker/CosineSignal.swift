@@ -1,3 +1,5 @@
+import FoundationModelsExtras
+
 /// The query side of the cosine signal that `Searcher` and
 /// `StreamingSearchCorpus` fuse into a search.
 ///
@@ -31,14 +33,14 @@ enum CosineSignal {
     ///   the same order, or `nil` to skip the cosine signal for this search.
     static func scores(
         forQuery query: String,
-        embedder: (any TextEmbedding)?,
+        embedder: (any PooledEmbedding)?,
         itemEmbeddings: [[Float]]?,
         onDiagnostic: @Sendable (RankDiagnostic) -> Void
     ) async -> [Double]? {
         guard
             let embedder,
             let itemEmbeddings,
-            let queryVector = try? await embedder.embed([query]).first,
+            let queryVector = try? await embedder.embed(texts: [query]).first,
             let scores = CosineScoring.similarities(of: queryVector, to: itemEmbeddings)
         else {
             onDiagnostic(.embeddingUnavailable)

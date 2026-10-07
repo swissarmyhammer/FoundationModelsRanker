@@ -9,13 +9,13 @@ import Testing
 /// (retrieval) with `SelectionTier` (agent selection) over an in-memory
 /// catalog built from the caller's items.
 ///
-/// Driven entirely against scripted `AgentSession` fakes
-/// (`Support/ScriptedAgentSession.swift`) and `FakeEmbedder`
+/// Driven entirely against a scripted FoundationModels model
+/// (`Support/ScriptedLanguageModel.swift`) and `FakeEmbedder`
 /// (`Support/FakeEmbedder.swift`) -- zero GPU, no live system model, no
-/// external dependency, matching every other selection-tier suite in this
-/// target. One test makes a real `LanguageModelSession` to show the
-/// instance front door takes it, but answers in `.retrieval` mode, so no
-/// test here runs inference.
+/// download, matching every other selection-tier suite in this target. One
+/// test gives `SystemLanguageModel.default` to show the `model:` argument
+/// takes it, but answers in `.retrieval` mode, so no test here runs
+/// inference.
 struct SearcherTests {
     // MARK: - Fixtures
 
@@ -56,11 +56,11 @@ struct SearcherTests {
     /// than the catalog holds, so no test truncates by accident.
     private static let resultLimit = 5
 
-    // MARK: - `.retrieval` mode: no session touched, real signals attached
+    // MARK: - `.retrieval` mode: no model touched, real signals attached
 
     @Test
     func retrievalModeRanksTheLexicallyClosestItemFirstWithRealSignals() async throws {
-        let searcher = try await Searcher(Self.toolItems, session: nil, mode: .retrieval)
+        let searcher = try await Searcher(Self.toolItems, model: nil, mode: .retrieval)
 
         let matches = try await searcher.search("search file contents with a regular expression", limit: 5)
 
@@ -73,29 +73,21 @@ struct SearcherTests {
     }
 
     @Test
-    func retrievalModeNeverConsultsASessionEvenWhenOneIsConfigured() async throws {
-        let session = ScriptedAgentSession([#"{"ids":["glob"]}"#])
-        let searcher = try await Searcher(Self.toolItems, session: { _ in session }, mode: .retrieval)
+    func retrievalModeNeverConsultsTheModelEvenWhenOneIsConfigured() async throws {
+        let model = ScriptedLanguageModel([#"{"ids":["glob"]}"#])
+        let searcher = try await Searcher(Self.toolItems, model: model, mode: .retrieval)
 
         _ = try await searcher.search("search file contents with a regular expression", limit: 5)
 
-        #expect(session.callCount == 0)
+        #expect(model.calls.isEmpty)
     }
 
-    // MARK: - `.selection` mode, under budget: cached root + fork-per-call
+    // MARK: - `.selection` mode, under budget: one prompt
 
     @Test
-    func selectionModeUnderBudgetUsesTheConfiguredSessionAndScoresThePickByItsOrder() async throws {
-        let root = RootSessionRespondCalledDirectlySession(forkResponses: [#"{"ids":["glob"]}"#])
-        let factoryCallCount = CallCounter()
-        let searcher = try await Searcher(
-            Self.toolItems,
-            session: { _ in
-                factoryCallCount.increment()
-                return root
-            },
-            mode: .selection
-        )
+    func selectionModeUnderBudgetAsksTheConfiguredModelAndScoresThePickByItsOrder() async throws {
+        let model = ScriptedLanguageModel([#"{"ids":["glob"]}"#])
+        let searcher = try await Searcher(Self.toolItems, model: model, mode: .selection)
 
         let matches = try await searcher.search("find files by name", limit: 5)
 
@@ -105,9 +97,17 @@ struct SearcherTests {
         // pick carries its order score and no retrieval signals.
         #expect(matches.first?.score == OrderScores.firstPick)
         #expect(matches.first?.signals == nil)
-        // Cached-root + fork-per-call: the session factory ran exactly once.
-        #expect(factoryCallCount.count == 1)
-        #expect(root.forkCount == 1)
+        // The prefix is the instructions of the session, and the prompt is
+        // the request block alone.
+        let catalog = SearchCorpus(items: Self.toolItems)
+        #expect(
+            model.calls == [
+                ScriptedModelCall(
+                    instructions: SelectionTier.assemblePrefix(preamble: .selectionDefault, catalog: catalog),
+                    prompt: ExpectedSelectionPrompt.request(for: "find files by name", ids: catalog.ids)
+                )
+            ]
+        )
     }
 
     @Test
@@ -115,12 +115,12 @@ struct SearcherTests {
         // `init` embeds every item in one call. A selection search asks the
         // model once and embeds nothing, so the count stays at that one call.
         let embedder = CountingEmbedder(vectorLength: Self.embeddingVectorLength)
-        let session = ScriptedAgentSession([#"{"ids":["watch"]}"#])
+        let model = ScriptedLanguageModel([#"{"ids":["watch"]}"#])
         let recorder = DiagnosticRecorder()
         let searcher = try await Searcher(
             Self.toolItems,
             embedder: embedder,
-            session: { _ in session },
+            model: model,
             mode: .selection,
             onDiagnostic: { recorder.record($0) }
         )
@@ -129,25 +129,24 @@ struct SearcherTests {
         let matches = try await searcher.search("qqqq")
 
         #expect(matches.map(\.id) == ["watch"])
-        #expect(session.callCount == 1)
+        #expect(model.calls.count == 1)
         #expect(embedder.callCount == embedCallsAfterInit)
         #expect(recorder.diagnostics.isEmpty)
     }
 
     @Test
-    func swappingTheSessionFactorySwapsWhichModelAnswersSelection() async throws {
-        // Two entirely different scripted sessions standing in for two
-        // different models -- proving the model is a plain argument, never
-        // hardcoded, by getting each configuration's own scripted answer
-        // back verbatim.
+    func swappingTheModelSwapsWhichModelAnswersSelection() async throws {
+        // Two different scripted models -- proving the model is a plain
+        // argument, never hardcoded, by getting each configuration's own
+        // scripted answer back verbatim.
         let searcherA = try await Searcher(
             Self.toolItems,
-            session: { _ in ScriptedAgentSession([#"{"ids":["grep"]}"#]) },
+            model: ScriptedLanguageModel([#"{"ids":["grep"]}"#]),
             mode: .selection
         )
         let searcherB = try await Searcher(
             Self.toolItems,
-            session: { _ in ScriptedAgentSession([#"{"ids":["watch"]}"#]) },
+            model: ScriptedLanguageModel([#"{"ids":["watch"]}"#]),
             mode: .selection
         )
 
@@ -158,12 +157,27 @@ struct SearcherTests {
         #expect(matchesB.map(\.id) == ["watch"])
     }
 
+    @Test
+    func aModelErrorComesOutOfSearch() async throws {
+        let searcher = try await Searcher(
+            Self.toolItems,
+            model: ScriptedLanguageModel(answers: [.failure]),
+            mode: .selection
+        )
+
+        await #expect(throws: ScriptedLanguageModelError.scriptedFailure) {
+            try await searcher.search("find files by name", limit: Self.resultLimit)
+        }
+    }
+
     // MARK: - `.selection` mode, over budget: one prompt per run of items
 
     @Test
     func selectionModeOverBudgetSendsEveryItemIdToExactlyOnePrompt() async throws {
-        let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha"]}"#])
-        let searcher = try await Searcher(Self.bulkItems, session: factory.makeSession, mode: .selection)
+        // Each prompt after the first answers with no id, so the merged
+        // answer is the first prompt's pick alone.
+        let model = ScriptedLanguageModel([#"{"ids":["alpha"]}"#] + Array(repeating: #"{"ids":[]}"#, count: Self.bulkItems.count))
+        let searcher = try await Searcher(Self.bulkItems, model: model, mode: .selection)
 
         let matches = try await searcher.search("urgent alpha task")
 
@@ -173,9 +187,10 @@ struct SearcherTests {
         // The catalog does not fit one prompt, so it is split into several,
         // and every item reaches exactly one of them. The `id:` line is
         // matched whole, because `id: filler3` is a prefix of `id: filler30`.
-        #expect(factory.receivedInstructions.count > 1)
+        let instructions = model.calls.compactMap(\.instructions)
+        #expect(instructions.count > 1)
         for item in Self.bulkItems {
-            let promptsCarryingID = factory.receivedInstructions.filter { $0.contains("\nid: \(item.id)\n") }
+            let promptsCarryingID = instructions.filter { $0.contains("\nid: \(item.id)\n") }
             #expect(promptsCarryingID.count == 1, "\(item.id) must reach exactly one prompt")
         }
     }
@@ -187,7 +202,7 @@ struct SearcherTests {
         let searcher = try await Searcher(
             Self.bulkItems,
             embedder: embedder,
-            session: { _ in ScriptedAgentSession([#"{"ids":["alpha"]}"#]) },
+            model: ScriptedLanguageModel(Array(repeating: #"{"ids":["alpha"]}"#, count: Self.bulkItems.count)),
             mode: .selection,
             onDiagnostic: { recorder.record($0) }
         )
@@ -204,14 +219,14 @@ struct SearcherTests {
     // MARK: - `.auto` mode resolution, both ways
 
     @Test
-    func autoModeResolvesToSelectionWhenASessionIsConfigured() async throws {
+    func autoModeResolvesToSelectionWhenAModelIsConfigured() async throws {
         // Retrieval alone would rank "grep" first for this query (lexical
         // overlap with "search"/"regular expression"); scripting the
-        // session to hand back "watch" instead proves `.auto` actually
+        // model to hand back "watch" instead proves `.auto` actually
         // drove the selection tier, not a retrieval fallback.
         let searcher = try await Searcher(
             Self.toolItems,
-            session: { _ in ScriptedAgentSession([#"{"ids":["watch"]}"#]) },
+            model: ScriptedLanguageModel([#"{"ids":["watch"]}"#]),
             mode: .auto
         )
 
@@ -219,19 +234,19 @@ struct SearcherTests {
 
         #expect(matches.map(\.id) == ["watch"])
         // The pick carries its order score and no retrieval signals: `.auto`
-        // with a session runs no retrieval at all.
+        // with a model runs no retrieval at all.
         #expect(matches.first?.score == OrderScores.firstPick)
         #expect(matches.first?.signals == nil)
     }
 
     @Test
-    func autoModeWithASessionNeverEmbedsTheQueryOrReportsEmbeddingUnavailable() async throws {
+    func autoModeWithAModelNeverEmbedsTheQueryOrReportsEmbeddingUnavailable() async throws {
         let embedder = CountingEmbedder(vectorLength: Self.embeddingVectorLength)
         let recorder = DiagnosticRecorder()
         let searcher = try await Searcher(
             Self.toolItems,
             embedder: embedder,
-            session: { _ in ScriptedAgentSession([#"{"ids":["watch"]}"#]) },
+            model: ScriptedLanguageModel([#"{"ids":["watch"]}"#]),
             mode: .auto,
             onDiagnostic: { recorder.record($0) }
         )
@@ -244,8 +259,8 @@ struct SearcherTests {
     }
 
     @Test
-    func autoModeDegradesToRetrievalWhenNoSessionIsConfigured() async throws {
-        let searcher = try await Searcher(Self.toolItems, session: nil, mode: .auto)
+    func autoModeDegradesToRetrievalWhenNoModelIsConfigured() async throws {
+        let searcher = try await Searcher(Self.toolItems, model: nil, mode: .auto)
 
         let matches = try await searcher.search("search file contents with a regular expression", limit: 5)
 
@@ -258,138 +273,12 @@ struct SearcherTests {
         #expect(first.signals != nil)
     }
 
-    // MARK: - The `session:` front doors: one live session, or a factory
-
     @Test
-    func aSuppliedSessionAnswersSelectionAndScoresThePickByItsOrder() async throws {
-        // The instance front door: a caller that already holds a session
-        // gives it directly, with no factory closure around it.
-        let session = ScriptedAgentSession([#"{"ids":["glob"]}"#])
-        let searcher = try await Searcher(Self.toolItems, session: session, mode: .selection)
-
-        let matches = try await searcher.search("find files by name", limit: 5)
-
-        #expect(matches.map(\.id) == ["glob"])
-        #expect(matches.first?.block == "Find files by name pattern, sorted by mtime")
-        // The supplied session answered: a `.session` source forks the very
-        // session the caller gave, and makes no session of its own.
-        #expect(session.forkCount == 1)
-        // The pick carries its order score and no retrieval signals.
-        #expect(matches.first?.score == OrderScores.firstPick)
-        #expect(matches.first?.signals == nil)
-    }
-
-    @Test
-    func aSuppliedSessionGetsTheAssembledPrefixInThePromptBecauseItTakesNoInstructions() async throws {
-        // A live session cannot take new instructions, so the prompt must
-        // carry the catalog. Without it the model sees no candidate and can
-        // return no id.
-        let session = ScriptedAgentSession([#"{"ids":["glob"]}"#])
-        let searcher = try await Searcher(Self.toolItems, session: session, mode: .selection)
-
-        _ = try await searcher.search("find files by name", limit: 5)
-
-        let prompt = try #require(session.receivedPrompts.first)
-        #expect(prompt.contains("<candidate>\nid: glob\n"))
-        #expect(prompt.hasSuffix(ExpectedSelectionPrompt.request(for: "find files by name", ids: Self.toolItems.map(\.id))))
-    }
-
-    @Test
-    func everySessionArgumentShapeResolvesWithNoTypeAnnotationAtTheCallSite() async throws {
-        // One contract, three call shapes, each written the way a caller
-        // writes it: with no type annotation. A closure takes the factory
-        // front door, because a function type conforms to no protocol. A
-        // live session takes the instance front door, because a session is
-        // no function. `nil` stays on the factory front door, because the
-        // instance front door takes a plain `any AgentSession`, which no
-        // `nil` can fill. Each shape is here because only the three
-        // together show the overloads stay unambiguous.
-        let factory = RecordingSessionFactory(responses: [#"{"ids":["grep"]}"#])
-        let closureSearcher = try await Searcher(
-            Self.toolItems,
-            session: { instructions in factory.makeSession(instructions: instructions) },
-            mode: .selection
-        )
-        let suppliedSession = ScriptedAgentSession([#"{"ids":["grep"]}"#])
-        let sessionSearcher = try await Searcher(Self.toolItems, session: suppliedSession, mode: .selection)
-        let nilSearcher = try await Searcher(Self.toolItems, session: nil, mode: .selection)
-
-        _ = try await closureSearcher.search("anything", limit: 5)
-        _ = try await sessionSearcher.search("anything", limit: 5)
-
-        // Only a `.factory` source calls the factory.
-        #expect(factory.receivedInstructions.count == 1)
-        // Only a `.session` source forks the session the caller supplied.
-        #expect(suppliedSession.forkCount == 1)
-        // Only the factory front door takes `nil`, which leaves selection
-        // unavailable.
-        await #expect(throws: SelectionTierUnavailable.self) {
-            try await nilSearcher.search("anything", limit: 5)
-        }
-    }
-
-    @Test
-    func anAsyncSessionClosureAnswersSelection() async throws {
-        // The closure awaits before it gives the session, as a pooled model
-        // does while it loads at the first request.
-        let factory = RecordingSessionFactory(responses: [#"{"ids":["glob"]}"#])
-        let searcher = try await Searcher(
-            Self.toolItems,
-            session: { instructions in try await factory.makeSessionAfterDelay(instructions: instructions) },
-            mode: .selection
-        )
-
-        let matches = try await searcher.search("find files by name", limit: Self.resultLimit)
-
-        #expect(matches.map(\.id) == ["glob"])
-        #expect(factory.receivedInstructions.count == 1)
-    }
-
-    @Test
-    func aThrowingSessionClosureMakesSearchThrowItsError() async throws {
-        let searcher = try await Searcher(
-            Self.toolItems,
-            session: { _ in throw SessionFactoryError() },
-            mode: .selection
-        )
-
-        await #expect(throws: SessionFactoryError()) {
-            try await searcher.search("find files by name", limit: Self.resultLimit)
-        }
-    }
-
-    @Test
-    func theInstanceFormAndTheFactoryFormGiveTheSameMatchesForTheSameScriptedAnswer() async throws {
-        // Two front doors, one behavior: the same catalog and the same
-        // answer must give the same matches, ids, blocks, scores, and
-        // signals included.
-        let answer = #"{"ids":["watch"]}"#
-        let factorySearcher = try await Searcher(
-            Self.toolItems,
-            session: { _ in ScriptedAgentSession([answer]) },
-            mode: .selection
-        )
-        let sessionSearcher = try await Searcher(
-            Self.toolItems,
-            session: ScriptedAgentSession([answer]),
-            mode: .selection
-        )
-
-        let factoryMatches = try await factorySearcher.search("find files by name", limit: 5)
-        let sessionMatches = try await sessionSearcher.search("find files by name", limit: 5)
-
-        #expect(factoryMatches.map(\.id) == ["watch"])
-        #expect(factoryMatches == sessionMatches)
-    }
-
-    @Test
-    func aLiveLanguageModelSessionGoesStraightInAsTheSessionArgument() async throws {
-        // The shape this front door exists for: a caller that already holds
-        // a `LanguageModelSession` gives it, with no factory closure and no
+    func theSystemModelGoesStraightInAsTheModelArgument() async throws {
+        // A caller gives a FoundationModels model with no closure and no
         // type annotation. `.retrieval` mode answers with no model call, so
         // this test runs no inference.
-        let session = LanguageModelSession(model: SystemLanguageModel.default, instructions: "selection guidance")
-        let searcher = try await Searcher(Self.toolItems, session: session, mode: .retrieval)
+        let searcher = try await Searcher(Self.toolItems, model: SystemLanguageModel.default, mode: .retrieval)
 
         let matches = try await searcher.search("search file contents with a regular expression", limit: 5)
 
@@ -405,7 +294,7 @@ struct SearcherTests {
         let searcher = try await Searcher(
             Self.toolItems,
             embedder: nil,
-            session: nil,
+            model: nil,
             mode: .retrieval,
             onDiagnostic: { recorder.record($0) }
         )
@@ -425,7 +314,7 @@ struct SearcherTests {
         let searcher = try await Searcher(
             Self.toolItems,
             embedder: nil,
-            session: { _ in ScriptedAgentSession([#"{"ids":["glob"]}"#]) },
+            model: ScriptedLanguageModel([#"{"ids":["glob"]}"#]),
             mode: .selection,
             onDiagnostic: { recorder.record($0) }
         )
@@ -441,7 +330,7 @@ struct SearcherTests {
         let searcher = try await Searcher(
             Self.toolItems,
             embedder: FakeEmbedder(vectorLength: 8),
-            session: nil,
+            model: nil,
             mode: .retrieval,
             onDiagnostic: { recorder.record($0) }
         )
@@ -465,7 +354,7 @@ struct SearcherTests {
         let searcher = try await Searcher(
             Self.toolItems,
             embedder: CountingEmbedder(vectorLength: 8, failingFromCall: queryEmbedCallNumber),
-            session: nil,
+            model: nil,
             mode: .retrieval,
             onDiagnostic: { recorder.record($0) }
         )
@@ -488,7 +377,7 @@ struct SearcherTests {
     @Test
     func aQueryVectorOfADifferentLengthDegradesToKeywordOnlyRetrievalAndReportsTheDiagnosticOncePerSearch() async throws {
         // The protocol declares no vector length, so only the vectors that
-        // `embed(_:)` returns tell their length. When the query vector and
+        // `embed(texts:)` returns tell their length. When the query vector and
         // the item vectors do not agree, cosine cannot score the items. The
         // search skips the cosine signal, keeps keyword retrieval, and
         // reports `.embeddingUnavailable` one time.
@@ -499,7 +388,7 @@ struct SearcherTests {
                 batchVectorLength: Self.embeddingVectorLength,
                 singleTextVectorLength: Self.mismatchedQueryVectorLength
             ),
-            session: nil,
+            model: nil,
             mode: .retrieval,
             onDiagnostic: { recorder.record($0) }
         )
@@ -522,7 +411,7 @@ struct SearcherTests {
         let searcher = try await Searcher(
             Self.toolItems,
             embedder: nil,
-            session: nil,
+            model: nil,
             weights: SignalWeights(cosine: 0.0),
             mode: .retrieval,
             onDiagnostic: { recorder.record($0) }
@@ -542,7 +431,7 @@ struct SearcherTests {
 
     @Test
     func nonPositiveLimitReturnsEmptyInRetrievalMode() async throws {
-        let searcher = try await Searcher(Self.toolItems, session: nil, mode: .retrieval)
+        let searcher = try await Searcher(Self.toolItems, model: nil, mode: .retrieval)
 
         let matches = try await searcher.search("search file contents with a regular expression", limit: 0)
 
@@ -550,39 +439,25 @@ struct SearcherTests {
     }
 
     @Test
-    func nonPositiveLimitReturnsEmptyInSelectionModeWithoutCreatingASession() async throws {
-        let factoryCallCount = CallCounter()
-        let searcher = try await Searcher(
-            Self.toolItems,
-            session: { _ in
-                factoryCallCount.increment()
-                return ScriptedAgentSession([#"{"ids":["grep"]}"#])
-            },
-            mode: .selection
-        )
+    func nonPositiveLimitReturnsEmptyInSelectionModeWithoutAPrompt() async throws {
+        let model = ScriptedLanguageModel([#"{"ids":["grep"]}"#])
+        let searcher = try await Searcher(Self.toolItems, model: model, mode: .selection)
 
         let matches = try await searcher.search("anything", limit: -1)
 
         #expect(matches.isEmpty)
-        #expect(factoryCallCount.count == 0)
+        #expect(model.calls.isEmpty)
     }
 
     @Test
-    func nonPositiveLimitReturnsEmptyInAutoModeWithoutCreatingASession() async throws {
-        let factoryCallCount = CallCounter()
-        let searcher = try await Searcher(
-            Self.toolItems,
-            session: { _ in
-                factoryCallCount.increment()
-                return ScriptedAgentSession([#"{"ids":["grep"]}"#])
-            },
-            mode: .auto
-        )
+    func nonPositiveLimitReturnsEmptyInAutoModeWithoutAPrompt() async throws {
+        let model = ScriptedLanguageModel([#"{"ids":["grep"]}"#])
+        let searcher = try await Searcher(Self.toolItems, model: model, mode: .auto)
 
         let matches = try await searcher.search("anything", limit: 0)
 
         #expect(matches.isEmpty)
-        #expect(factoryCallCount.count == 0)
+        #expect(model.calls.isEmpty)
     }
 
     // MARK: - Duplicate ids: first occurrence wins, never a crash
@@ -593,7 +468,7 @@ struct SearcherTests {
             SearchItem(id: "grep", text: "the first, real grep description mentioning regular expressions"),
             SearchItem(id: "grep", text: "a later duplicate that should never be indexed"),
         ]
-        let searcher = try await Searcher(items, session: nil, mode: .retrieval)
+        let searcher = try await Searcher(items, model: nil, mode: .retrieval)
 
         let matches = try await searcher.search("regular expressions", limit: 5)
 
@@ -601,11 +476,11 @@ struct SearcherTests {
         #expect(matches.first?.block == "the first, real grep description mentioning regular expressions")
     }
 
-    // MARK: - Degradation: `.selection` requested with no session configured
+    // MARK: - Degradation: `.selection` requested with no model configured
 
     @Test
-    func selectionModeWithNoSessionConfiguredThrowsSelectionTierUnavailable() async throws {
-        let searcher = try await Searcher(Self.toolItems, session: nil, mode: .selection)
+    func selectionModeWithNoModelConfiguredThrowsSelectionTierUnavailable() async throws {
+        let searcher = try await Searcher(Self.toolItems, model: nil, mode: .selection)
 
         await #expect(throws: SelectionTierUnavailable.self) {
             try await searcher.search("anything", limit: 5)
@@ -629,7 +504,7 @@ struct SearcherTests {
             FixtureTool(id: "deploy", text: "ships containers to a kubernetes cluster"),
             FixtureTool(id: "rollback", text: "reverts the last release"),
         ]
-        let searcher = try await Searcher(tools, session: nil, mode: .retrieval)
+        let searcher = try await Searcher(tools, model: nil, mode: .retrieval)
 
         let matches = try await searcher.search("roll back the last release", limit: 5)
 

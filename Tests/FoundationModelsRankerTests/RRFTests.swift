@@ -1,12 +1,8 @@
 import FoundationModelsRanker
 import Testing
 
-/// Reciprocal Rank Fusion and `Hit`/`Signals` plumbing tests, ported from
-/// FoundationModelsMetadataRegistry's `RRFTests.swift` (which itself adapted
-/// CodeContextKit's `RankerTests.swift` "RRF" and "Hit / Signals" sections,
-/// porting the Rust `swissarmyhammer-search` crate's `score.rs`/`lib.rs`
-/// test suites). Covers the RRF acceptance
-/// criteria for this port: `k = 60`, 0-based ranks, an absent signal
+/// Reciprocal Rank Fusion and `Hit`/`Signals` plumbing tests. Covers the RRF
+/// contract: `k = 60`, 0-based ranks, an absent signal
 /// contributing nothing (never zero-filled), and normalized scores staying
 /// in `[0, 1]`.
 struct RRFTests {

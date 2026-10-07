@@ -1,11 +1,7 @@
 import FoundationModelsRanker
 import Testing
 
-/// Tokenizer and character-trigram Sørensen-Dice tests, ported from
-/// FoundationModelsMetadataRegistry's `TrigramTests.swift` (which itself
-/// adapted CodeContextKit's `RankerTests.swift` "Tokenizer" and "Trigram
-/// Dice" sections, porting the Rust `swissarmyhammer-search` crate's
-/// `tokenize.rs`/`score.rs` test suites). `Trigram`
+/// Tokenizer and character-trigram Sørensen-Dice tests. `Trigram`
 /// canonicalizes through `Tokenizer.tokenize(text:)`, so both are exercised
 /// here.
 struct TrigramTests {

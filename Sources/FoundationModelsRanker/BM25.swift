@@ -1,18 +1,9 @@
-// Ported from CodeContextKit's `Sources/CodeContextKit/Search/BM25.swift`,
-// which itself ports the Rust `swissarmyhammer-search` crate's `score.rs`.
-// The two field-weight constants are renamed to
-// domain-neutral names: CodeContextKit's
-// `symbolPathFieldWeight` / FoundationModelsMetadataRegistry's
-// `idFieldWeight` -> `primaryFieldWeight`; `bodyFieldWeight` /
-// `blockFieldWeight` -> `bodyFieldWeight` (name unchanged, same value). No
-// other behavior changes.
-
 import Foundation
 
 /// BM25 scoring constants: term-frequency saturation (`k1`), length
 /// normalization (`b`), and the two field weights used to build a
-/// document's weighted term frequency. Ported from
-/// the Rust crate's `score.rs`.
+/// document's weighted term frequency. The field weights use neutral
+/// names ("primary" and "body"), so they fit any kind of corpus.
 public enum BM25 {
     /// Term-frequency saturation parameter `k1`.
     public static let k1: Double = 1.2

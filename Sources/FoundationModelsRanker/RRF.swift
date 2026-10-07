@@ -1,10 +1,5 @@
-// Ported from CodeContextKit's `Sources/CodeContextKit/Search/RRF.swift`.
-// Lineage: Rust `swissarmyhammer-search` crate's `score.rs` ->
-// CodeContextKit -> FoundationModelsRanker. No behavior changes.
-
 /// Reciprocal Rank Fusion: combine several ranked lists of document indices
-/// into one fused ranking. Ported from the Rust
-/// crate's `score.rs`.
+/// into one fused ranking.
 ///
 /// `RRF(d) = Σ_r w_r / (k + rank_r(d))` summed over the lists `r` in which
 /// document `d` appears. **Ranks are 0-based**: rank `0` is the best

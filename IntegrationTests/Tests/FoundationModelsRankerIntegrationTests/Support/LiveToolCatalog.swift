@@ -5,11 +5,9 @@ import FoundationModelsRanker
 ///
 /// The summary of each entry is its description alone. The assembled prefix
 /// already puts each id on the `id:` line of its `<candidate>` block, above a
-/// `description:` line with this summary. Before card `^knyvhkf`, the
-/// summary also named its own id, because the prefix showed each id only as a
-/// heading. A summary that repeats the id now gives the model a second
-/// `id:` text in the `description:` line, and that is not the format that a
-/// real catalog gives.
+/// `description:` line with this summary. A summary that repeats the id
+/// gives the model a second `id:` text in the `description:` line, and that
+/// is not the format that a real catalog gives.
 ///
 /// The root package answers its hermetic tests with `FixtureSelectionCatalog`
 /// (`Tests/FoundationModelsRankerTests/Support/FixtureSelectionCatalog.swift`)

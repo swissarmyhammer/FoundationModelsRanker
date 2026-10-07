@@ -3,13 +3,11 @@ import Testing
 
 /// `RankedDocument` precompute tests.
 ///
-/// `RankedDocument.init(primaryText:bodyText:)` must produce the same
-/// weighted term frequencies, term sets, document lengths, and trigram sets
-/// as CodeContextKit's `SearchCorpus.preprocessRow` (and FMR's equivalent
-/// `MetadataIndex` build step) for identical inputs — both are
-/// `primaryTokens`/`bodyTokens` folded through `BM25.primaryFieldWeight` /
-/// `BM25.bodyFieldWeight` into one weighted term-frequency map, plus
-/// `Trigram.canonicalTrigramSet(text:)` over each field, verbatim. Expected
+/// `RankedDocument.init(primaryText:bodyText:)` must fold
+/// `primaryTokens`/`bodyTokens` through `BM25.primaryFieldWeight` /
+/// `BM25.bodyFieldWeight` into one weighted term-frequency map, and compute
+/// term sets, document lengths, and `Trigram.canonicalTrigramSet(text:)`
+/// over each field. Expected
 /// values below are hand-traced through `Tokenizer.tokenize(text:)` and
 /// `Tokenizer.charTrigrams(text:)`, matching the small-fixture style of
 /// `TrigramTests` and `RankerTests`' `BM25Corpus` literals, so a bug in

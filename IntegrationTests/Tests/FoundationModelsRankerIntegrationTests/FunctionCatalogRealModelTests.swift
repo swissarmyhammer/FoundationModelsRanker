@@ -1,8 +1,8 @@
+import FoundationModels
 import FoundationModelsRanker
 import Testing
 
-/// The nine functions of the consumer catalog that card `^zxm99zs` measured:
-/// the files and shell tools of FoundationModelsMultitool.
+/// The nine functions of a consumer catalog: a set of files and shell tools.
 ///
 /// The consumer renders each entry as its `tools.<path>` id above its full
 /// description. This catalog keeps the ids and cuts each description to its
@@ -24,7 +24,7 @@ private let functionCatalog = LiveToolCatalog([
 ])
 
 /// The ten queries the consumer's agent gave to its search tool on one
-/// SWE-bench run, in the order it gave them (card `^zxm99zs`).
+/// SWE-bench run, in the order it gave them.
 ///
 /// Each query names at least one candidate of `functionCatalog`, so each
 /// query must come back with at least one id.
@@ -58,21 +58,23 @@ struct FunctionCatalogRealModelTests {
     /// function catalog from a session that has answered nothing yet.
     ///
     /// **Every query gets its own tier**, so every search runs on a cold
-    /// session, the state a caller that asks one question starts in. Card
-    /// `^zxm99zs` measured the preamble that shipped before this test on this
-    /// catalog, three rounds each. On the system model, cold, "file
-    /// operations: create, write, append, delete, move" answered 0 of 3 and
-    /// the other nine queries 3 of 3. On `mlx-community/Qwen3-4B-4bit`, over
-    /// the consumer's own catalog and grammar, all ten queries answered 0 of
-    /// 3. The default that ships now says what the candidates are and what an
-    /// answer is, and it tells the model to prefer the closest candidates
-    /// over an empty answer. With it, both models answered 30 of 30.
+    /// session, the state a caller that asks one question starts in. This
+    /// catalog is a hard case. A preamble that does not say what the
+    /// candidates are and what an answer is can get an empty answer. In a
+    /// measurement of three rounds each, such a preamble on the system model,
+    /// cold, answered "file operations: create, write, append, delete, move"
+    /// 0 of 3 times. On `mlx-community/Qwen3-4B-4bit`, over the consumer's own
+    /// catalog and grammar, it answered all ten queries 0 of 3 times. The
+    /// default preamble says what the candidates are and what an answer is,
+    /// and it tells the model to prefer the closest candidates over an empty
+    /// answer. With it, both models answered 30 of 30.
     ///
     /// The test makes no claim about which id comes back. A live model can
     /// word a correct pick differently from one run to the next. It claims
     /// that some catalog id came back, and that the tier reported no
-    /// diagnostic, because a bare `LanguageModelSession` carries no grammar
-    /// and the only diagnostic the tier emits is `.unknownSelectedId`.
+    /// diagnostic. Guided generation limits the answer to the shape of
+    /// `Selection`, not to the catalog ids, and the only diagnostic the tier
+    /// emits is `.unknownSelectedId`.
     ///
     /// - Parameter query: the consumer query this case asks, cold.
     @Test(
@@ -82,7 +84,7 @@ struct FunctionCatalogRealModelTests {
     func theDefaultPreambleAnswersEveryFunctionCatalogQueryOnAColdSession(query: String) async throws {
         let tier = SelectionTier(
             catalog: functionCatalog,
-            config: SelectionConfig(model: Searcher.defaultSessionFactory),
+            config: SelectionConfig(model: SystemLanguageModel.default),
             onDiagnostic: { diagnostic in
                 Issue.record("The selection tier reported \(diagnostic).")
             }

@@ -1,15 +1,11 @@
 @testable import FoundationModelsRanker
 
 /// A simple in-memory `SelectionCatalog` conformer for `SelectionTier` tests
-/// — adapted from the source repo's `FixtureItem:
-/// SearchableMetadata` fixtures (`SelectionTests`/`OverBudgetTests`), which
-/// wrapped items in a `MetadataIndex`. FoundationModelsRanker's `SelectionCatalog` is
-/// id-keyed directly, so this fixture holds ids and per-id block/summary
-/// lookups instead of a list of catalog items.
+/// (`SelectionTests`/`OverBudgetTests`). `SelectionCatalog` is id-keyed, so
+/// this fixture holds ids and per-id block/summary lookups.
 struct FixtureSelectionCatalog: SelectionCatalog {
     /// One fixture entry: an id, its verbatim block, and an optional summary
-    /// (defaults to `block` when omitted, mirroring the source fixtures'
-    /// `renderSummaryBlock() { summary ?? block }`).
+    /// (defaults to `block` when omitted).
     struct Item {
         let id: String
         let block: String

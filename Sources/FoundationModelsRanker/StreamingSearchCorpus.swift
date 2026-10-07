@@ -1,17 +1,11 @@
-// New to FoundationModelsRanker (^c79yg0f) -- actor confinement for the
-// mutable streaming corpus. `SearchCorpus` (SearchCorpus.swift) documents
-// itself as "a value type with no concurrency posture of its own: a
-// producer mutating one while a consumer queries it must confine it (an
-// actor, a lock, or a single task)"; this type is that confinement,
+// Actor confinement for the mutable streaming corpus. `SearchCorpus`
+// (SearchCorpus.swift) documents itself as "a value type with no
+// concurrency posture of its own: a producer mutating one while a
+// consumer queries it must confine it (an actor, a lock, or a single
+// task)"; this type is that confinement,
 // actor-shaped, for the motivating case both files describe: a recorder
 // appending/evicting transcript entries while a search tool queries, from
 // arbitrary, unsynchronized tasks.
-//
-// Family precedent for the shape (an actor holding a mutable value type as
-// a `var`, swapped/mutated in place, never exposed directly):
-// FoundationModelsMetadataRegistry's `MetadataSearcher`
-// (`Sources/FoundationModelsMetadataRegistry/MetadataSearcher.swift`) holds
-// its `MetadataIndex` exactly this way for its own hot-reload case.
 //
 // Design choice -- wraps `SearchCorpus` directly, not `Searcher`'s private
 // `RetrievalEngine`, and is not `SearchCorpus` itself turned into an actor:
@@ -31,7 +25,7 @@
 //     minimal: it owns exactly the mutable corpus that needs confining,
 //     plus the embedder/diagnostic knobs its own `add`/`search` need.
 //
-// Embedding wiring (^rayd7bq: incremental embed on the streaming add path)
+// Embedding wiring (incremental embed on the streaming add path)
 // -- `add(items:)` embeds exactly the items it newly added, once, in a
 // single batched call, then stores each vector on `SearchCorpus`'s row for
 // that id (`SearchCorpus.setEmbedding(_:forID:ifTextMatches:)`), keyed by
@@ -47,6 +41,8 @@
 // re-add of the same id -- see `SearchCorpus.setEmbedding(_:forID:
 // ifTextMatches:)`'s documentation for the exact race this closes.
 
+import FoundationModelsExtras
+
 /// Actor-confined wrapper around `SearchCorpus` for the producer/consumer
 /// concurrency case `SearchCorpus` itself calls out: a producer (e.g. a
 /// transcript recorder) appending and evicting items while a consumer
@@ -61,8 +57,8 @@
 /// completion atomically with respect to every other call on this actor --
 /// no data race, and no interleaving partway through, ever.
 ///
-/// `add(items:)`/`search(_:limit:)` do now suspend (^rayd7bq: an `await
-/// embedder.embed(_:)` call each), so a concurrent `remove`/`add` *can* run
+/// `add(items:)`/`search(_:limit:)` do suspend (an `await
+/// embedder.embed(texts:)` call each), so a concurrent `remove`/`add` *can* run
 /// during that gap. What stays true regardless:
 /// - `remove`/other `add` calls are still each individually atomic (the
 ///   invariant above), so `corpus` itself is never torn -- only ever some
@@ -102,10 +98,9 @@ public actor StreamingSearchCorpus {
     /// Embeds every newly added item's text at add time, and the query at
     /// every `search(_:limit:)` call -- adds the cosine signal to this
     /// corpus's ranking. `nil` (the default) skips cosine entirely and
-    /// reports `.embeddingUnavailable` via `onDiagnostic` on every search
-    /// (^rayd7bq: incremental embed on the streaming add path, mirroring
-    /// `Searcher`'s own embedder degradation).
-    private let embedder: (any TextEmbedding)?
+    /// reports `.embeddingUnavailable` via `onDiagnostic` on every search,
+    /// the same degradation as `Searcher`'s embedder.
+    private let embedder: (any PooledEmbedding)?
 
     /// Called for every diagnostic this corpus emits (currently only
     /// `.embeddingUnavailable`).
@@ -121,7 +116,7 @@ public actor StreamingSearchCorpus {
     ///   - onDiagnostic: called for every diagnostic this corpus emits.
     ///     Defaults to doing nothing.
     public init(
-        embedder: (any TextEmbedding)? = nil,
+        embedder: (any PooledEmbedding)? = nil,
         onDiagnostic: @escaping @Sendable (RankDiagnostic) -> Void = { _ in }
     ) {
         corpus = SearchCorpus()
@@ -146,7 +141,7 @@ public actor StreamingSearchCorpus {
     ///     Defaults to doing nothing.
     public init<Item: Searchable>(
         items: [Item],
-        embedder: (any TextEmbedding)? = nil,
+        embedder: (any PooledEmbedding)? = nil,
         onDiagnostic: @escaping @Sendable (RankDiagnostic) -> Void = { _ in }
     ) async {
         corpus = SearchCorpus()
@@ -165,17 +160,16 @@ public actor StreamingSearchCorpus {
     /// Adds `items`, exactly as `SearchCorpus.add(items:)` -- see that
     /// method's documentation for the precompute and duplicate-id rules --
     /// then, when `embedder` is configured, embeds exactly the items this
-    /// call actually added (^rayd7bq: incremental embed on the streaming add
-    /// path).
+    /// call actually added.
     ///
     /// Every newly added item's text is embedded once, here, in a single
-    /// batched `embedder.embed(_:)` call -- never once per item, and never
+    /// batched `embedder.embed(texts:)` call -- never once per item, and never
     /// again later. A duplicate id `SearchCorpus.add(items:)` drops is never
     /// embedded: it was never added, so there is no row to attach an
     /// embedding to. If `items` turns out to add nothing new (every id was
     /// already live), `embedder` isn't called at all.
     ///
-    /// A failed embed call (`embedder.embed(_:)` throws, or returns a
+    /// A failed embed call (`embedder.embed(texts:)` throws, or returns a
     /// mismatched vector count) leaves the newly added rows with no stored
     /// embedding -- graceful degradation, exactly `Searcher`'s own
     /// `embedder`/`itemEmbeddings` handling: the add itself still succeeds,
@@ -204,7 +198,7 @@ public actor StreamingSearchCorpus {
         guard let embedder, !addedIDs.isEmpty else { return }
 
         let toEmbed = addedIDs.compactMap { id in corpus.block(forID: id).map { (id: id, text: $0) } }
-        guard let vectors = try? await embedder.embed(toEmbed.map(\.text)), vectors.count == toEmbed.count else { return }
+        guard let vectors = try? await embedder.embed(texts: toEmbed.map(\.text)), vectors.count == toEmbed.count else { return }
         for (entry, vector) in zip(toEmbed, vectors) {
             corpus.setEmbedding(vector, forID: entry.id, ifTextMatches: entry.text)
         }

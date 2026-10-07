@@ -11,10 +11,10 @@ import Testing
 /// one prompt for each run. Every id reaches one prompt. No retrieval
 /// ranking picks the candidates, and no `.retrievalCut` is reported.
 ///
-/// Driven directly against `SelectionTier` with scripted `AgentSession`
-/// fakes (`Support/ScriptedAgentSession.swift`) over a
-/// `FixtureSelectionCatalog` -- zero GPU, no external dependency, the same
-/// pattern `SelectionTests` uses for the under-budget path.
+/// Driven directly against `SelectionTier` with a scripted FoundationModels
+/// model (`Support/ScriptedLanguageModel.swift`) over a
+/// `FixtureSelectionCatalog` -- zero GPU, no download, the same pattern
+/// `SelectionTests` uses for the under-budget path.
 struct OverBudgetTests {
     // MARK: - Fixtures
 
@@ -45,6 +45,10 @@ struct OverBudgetTests {
     /// holds, so no test truncates by accident.
     static let resultLimit = 5
 
+    /// The answer that each prompt of the tests that do not read the answer
+    /// gets.
+    static let alphaAnswer = #"{"ids":["alpha"]}"#
+
     /// The prefix a prompt for `run` carries.
     ///
     /// - Parameter run: the candidate ids of one prompt, in order.
@@ -53,75 +57,110 @@ struct OverBudgetTests {
         SelectionTier.assemblePrefix(preamble: .selectionDefault, ids: run, catalog: catalog)
     }
 
-    /// A tier over `catalog` that answers with `config` and records every
-    /// diagnostic in `recorder`.
+    /// A scripted model that gives `alphaAnswer` to each of `count` prompts.
+    ///
+    /// - Parameter count: the number of prompts the model answers.
+    /// - Returns: the model.
+    static func alphaModel(count: Int) -> ScriptedLanguageModel {
+        ScriptedLanguageModel(Array(repeating: alphaAnswer, count: count))
+    }
+
+    /// A tier over `catalog` that asks `model` within `limit`, and records
+    /// every diagnostic in `recorder`.
     ///
     /// - Parameters:
-    ///   - config: the tier's session source and budget.
+    ///   - model: the scripted model that answers each prompt.
+    ///   - limit: the capacity budget. Defaults to `twoCandidateLimit`.
     ///   - recorder: receives every diagnostic the tier reports.
     /// - Returns: the tier under test.
-    static func makeTier(config: SelectionConfig, recorder: DiagnosticRecorder = DiagnosticRecorder()) -> SelectionTier {
-        SelectionTier(catalog: catalog, config: config, onDiagnostic: { recorder.record($0) })
+    static func makeTier(
+        _ model: ScriptedLanguageModel,
+        limit: Int = twoCandidateLimit,
+        recorder: DiagnosticRecorder = DiagnosticRecorder()
+    ) -> SelectionTier {
+        SelectionTier(
+            catalog: catalog,
+            config: SelectionConfig(model: model, capacityCharacterLimit: limit),
+            onDiagnostic: { recorder.record($0) }
+        )
     }
 
     // MARK: - Every id reaches one prompt
 
     @Test
     func overBudgetSendsEveryCatalogIdToExactlyOnePrompt() async throws {
-        let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha"]}"#])
-        let config = SelectionConfig(model: factory.makeSession, capacityCharacterLimit: Self.twoCandidateLimit)
-        let tier = Self.makeTier(config: config)
+        let model = Self.alphaModel(count: Self.expectedRuns.count)
+        let tier = Self.makeTier(model)
 
         _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
 
         // The `id:` line is matched whole, so an id that is a prefix of
         // another id cannot count twice.
         for id in Self.catalog.ids {
-            let promptsCarryingID = factory.receivedInstructions.filter { $0.contains("\nid: \(id)\n") }
+            let promptsCarryingID = model.calls.filter { $0.instructions?.contains("\nid: \(id)\n") == true }
             #expect(promptsCarryingID.count == 1, "\(id) must reach exactly one prompt")
         }
     }
 
     @Test
     func overBudgetPromptsKeepCatalogOrderAndEachFitsTheBudget() async throws {
-        let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha"]}"#])
-        let config = SelectionConfig(model: factory.makeSession, capacityCharacterLimit: Self.twoCandidateLimit)
-        let tier = Self.makeTier(config: config)
+        let model = Self.alphaModel(count: Self.expectedRuns.count)
+        let tier = Self.makeTier(model)
 
         _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
 
-        #expect(factory.receivedInstructions == Self.expectedRuns.map(Self.prefix(for:)))
-        for instructions in factory.receivedInstructions {
-            #expect(instructions.count <= Self.twoCandidateLimit)
+        let instructions = model.calls.map(\.instructions)
+        #expect(instructions == Self.expectedRuns.map(Self.prefix(for:)))
+        for text in instructions.compactMap(\.self) {
+            #expect(text.count <= Self.twoCandidateLimit)
         }
     }
 
     @Test
     func anEntryThatDoesNotFitTheBudgetAloneStillGetsAPromptOfItsOwn() async throws {
-        let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha"]}"#])
-        let config = SelectionConfig(model: factory.makeSession, capacityCharacterLimit: Self.forcedOverBudgetLimit)
-        let tier = Self.makeTier(config: config)
+        let model = Self.alphaModel(count: Self.catalog.ids.count)
+        let tier = Self.makeTier(model, limit: Self.forcedOverBudgetLimit)
 
         _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
 
         // The tier cannot make a prompt smaller than one entry, so an entry
         // over the budget is sent alone rather than dropped.
-        #expect(factory.receivedInstructions == Self.catalog.ids.map { Self.prefix(for: [$0]) })
+        #expect(model.calls.map(\.instructions) == Self.catalog.ids.map { Self.prefix(for: [$0]) })
+    }
+
+    @Test
+    func eachOverBudgetPromptHasItsRunsPrefixAsInstructionsAndItsRunsRequestBlockAsItsPrompt() async throws {
+        let model = Self.alphaModel(count: Self.expectedRuns.count)
+        let tier = Self.makeTier(model)
+
+        _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
+
+        // Each run gets a new session with that run's prefix as its
+        // instructions, so each prompt carries the same `<request>` block
+        // and exact-id line as the under-budget prompt, with that run's ids
+        // only.
+        #expect(
+            model.calls == Self.expectedRuns.map { run in
+                ScriptedModelCall(
+                    instructions: Self.prefix(for: run),
+                    prompt: ExpectedSelectionPrompt.request(for: "alpha", ids: run)
+                )
+            }
+        )
     }
 
     // MARK: - Merged answer: prompt order, then the model's order
 
     @Test
     func overBudgetMergesAnsweredIdsInPromptOrderThenInTheModelsOrder() async throws {
-        // One session answers every prompt in turn, so the first prompt gets
+        // The model answers the prompts in turn, so the first prompt gets
         // the first answer, and so on down the list.
-        let session = ScriptedAgentSession([
+        let model = ScriptedLanguageModel([
             #"{"ids":["bravo","alpha"]}"#,
             #"{"ids":["gamma"]}"#,
             #"{"ids":[]}"#,
         ])
-        let config = SelectionConfig(model: { _ in session }, capacityCharacterLimit: Self.twoCandidateLimit)
-        let tier = Self.makeTier(config: config)
+        let tier = Self.makeTier(model)
 
         let matches = try await tier.search(intent: "alpha", limit: Self.resultLimit)
 
@@ -132,19 +171,18 @@ struct OverBudgetTests {
 
     @Test
     func overBudgetResultsAreTruncatedToLimitAfterEveryPromptAnswered() async throws {
-        let session = ScriptedAgentSession([
+        let model = ScriptedLanguageModel([
             #"{"ids":["alpha"]}"#,
             #"{"ids":["delta"]}"#,
             #"{"ids":["kappa"]}"#,
         ])
-        let config = SelectionConfig(model: { _ in session }, capacityCharacterLimit: Self.twoCandidateLimit)
-        let tier = Self.makeTier(config: config)
+        let tier = Self.makeTier(model)
 
         let matches = try await tier.search(intent: "alpha", limit: 2)
 
         // Every prompt is answered before the cut, so a later prompt's pick
         // is never lost to an early stop.
-        #expect(session.callCount == Self.expectedRuns.count)
+        #expect(model.calls.count == Self.expectedRuns.count)
         #expect(matches.map(\.id) == ["alpha", "delta"])
     }
 
@@ -153,14 +191,13 @@ struct OverBudgetTests {
         // The catalog is the id set every prompt draws from, so an id the
         // model names in one prompt and again in its own prompt resolves,
         // and resolves one time only.
-        let session = ScriptedAgentSession([
+        let model = ScriptedLanguageModel([
             #"{"ids":["kappa"]}"#,
             #"{"ids":[]}"#,
             #"{"ids":["kappa"]}"#,
         ])
         let recorder = DiagnosticRecorder()
-        let config = SelectionConfig(model: { _ in session }, capacityCharacterLimit: Self.twoCandidateLimit)
-        let tier = Self.makeTier(config: config, recorder: recorder)
+        let tier = Self.makeTier(model, recorder: recorder)
 
         let matches = try await tier.search(intent: "alpha", limit: Self.resultLimit)
 
@@ -168,100 +205,14 @@ struct OverBudgetTests {
         #expect(recorder.diagnostics.isEmpty)
     }
 
-    // MARK: - Session source: one supplied session vs a session factory
-
     @Test
-    func overBudgetSuppliedSessionIsForkedOncePerPromptWithThatPromptsCandidatesOnly() async throws {
-        let session = ScriptedAgentSession(Self.expectedRuns.map { _ in #"{"ids":["alpha"]}"# })
-        let config = SelectionConfig(session: session, capacityCharacterLimit: Self.twoCandidateLimit)
-        let tier = Self.makeTier(config: config)
+    func aModelErrorInALaterRunComesOutOfTheSearch() async throws {
+        let model = ScriptedLanguageModel(answers: [.text(Self.alphaAnswer), .failure])
+        let tier = Self.makeTier(model)
 
-        _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
-
-        #expect(session.forkCount == Self.expectedRuns.count)
-        // A live session takes no new instructions, so each prompt carries
-        // its own run's prefix above the intent, and no other run's.
-        let expectedPrompts = Self.expectedRuns.map { run in
-            "\(Self.prefix(for: run))\n\n\(ExpectedSelectionPrompt.request(for: "alpha", ids: run))"
-        }
-        #expect(session.receivedPrompts == expectedPrompts)
-    }
-
-    @Test
-    func overBudgetFactorySessionIsPromptedWithTheIntentInARequestBlock() async throws {
-        let session = ScriptedAgentSession(Self.expectedRuns.map { _ in #"{"ids":["alpha"]}"# })
-        let config = SelectionConfig(model: { _ in session }, capacityCharacterLimit: Self.twoCandidateLimit)
-        let tier = Self.makeTier(config: config)
-
-        _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
-
-        // A factory session already holds its run's prefix as instructions,
-        // so each prompt carries the same `<request>` block and exact-id
-        // line, exactly as the under-budget factory prompt does.
-        let expectedPrompts = Self.expectedRuns.map { run in ExpectedSelectionPrompt.request(for: "alpha", ids: run) }
-        #expect(session.receivedPrompts == expectedPrompts)
-    }
-
-    // MARK: - One-off sessions: no caching, no fork
-
-    @Test
-    func overBudgetCreatesAFreshSessionPerPromptWithoutCaching() async throws {
-        let factoryCallCount = CallCounter()
-        let config = SelectionConfig(
-            model: { _ in
-                factoryCallCount.increment()
-                return ScriptedAgentSession([#"{"ids":["alpha"]}"#])
-            },
-            capacityCharacterLimit: Self.twoCandidateLimit
-        )
-        let tier = Self.makeTier(config: config)
-
-        _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
-        _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
-
-        // Unlike the cached-root path, every prompt of every call gets a
-        // fresh session.
-        #expect(factoryCallCount.count == Self.expectedRuns.count * 2)
-    }
-
-    @Test
-    func anAsyncFactoryIsAwaitedOneTimeForEachOverBudgetRun() async throws {
-        // The factory waits before it gives each session, as a pooled model
-        // does while it loads. Each run still gets one session, seeded with
-        // that run's prefix, in run order.
-        let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha"]}"#])
-        let config = SelectionConfig(model: factory.makeSessionAfterDelay, capacityCharacterLimit: Self.twoCandidateLimit)
-        let tier = Self.makeTier(config: config)
-
-        let matches = try await tier.search(intent: "alpha", limit: Self.resultLimit)
-
-        #expect(factory.receivedInstructions == Self.expectedRuns.map(Self.prefix(for:)))
-        #expect(matches.map(\.id) == ["alpha"])
-    }
-
-    @Test
-    func aThrowingFactoryMakesAnOverBudgetSearchThrowItsError() async throws {
-        let config = SelectionConfig(
-            model: { _ in throw SessionFactoryError() },
-            capacityCharacterLimit: Self.twoCandidateLimit
-        )
-        let tier = Self.makeTier(config: config)
-
-        await #expect(throws: SessionFactoryError()) {
+        await #expect(throws: ScriptedLanguageModelError.scriptedFailure) {
             try await tier.search(intent: "alpha", limit: Self.resultLimit)
         }
-    }
-
-    @Test
-    func overBudgetFactorySessionIsNeverForked() async throws {
-        let session = ScriptedAgentSession(Self.expectedRuns.map { _ in #"{"ids":["alpha"]}"# })
-        let config = SelectionConfig(model: { _ in session }, capacityCharacterLimit: Self.twoCandidateLimit)
-        let tier = Self.makeTier(config: config)
-
-        _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
-
-        #expect(session.forkCount == 0)
-        #expect(session.callCount == Self.expectedRuns.count)
     }
 
     // MARK: - Diagnostics
@@ -269,9 +220,7 @@ struct OverBudgetTests {
     @Test
     func overBudgetReportsNoDiagnosticWhenEveryAnswerIsACatalogId() async throws {
         let recorder = DiagnosticRecorder()
-        let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha"]}"#])
-        let config = SelectionConfig(model: factory.makeSession, capacityCharacterLimit: Self.twoCandidateLimit)
-        let tier = Self.makeTier(config: config, recorder: recorder)
+        let tier = Self.makeTier(Self.alphaModel(count: Self.expectedRuns.count), recorder: recorder)
 
         _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
 
@@ -282,13 +231,12 @@ struct OverBudgetTests {
     @Test
     func overBudgetIdOutsideTheCatalogIsFilteredAndReportedAsUnknown() async throws {
         let recorder = DiagnosticRecorder()
-        let session = ScriptedAgentSession([
+        let model = ScriptedLanguageModel([
             #"{"ids":["alpha","zulu"]}"#,
             #"{"ids":[]}"#,
             #"{"ids":[]}"#,
         ])
-        let config = SelectionConfig(model: { _ in session }, capacityCharacterLimit: Self.twoCandidateLimit)
-        let tier = Self.makeTier(config: config, recorder: recorder)
+        let tier = Self.makeTier(model, recorder: recorder)
 
         let matches = try await tier.search(intent: "alpha", limit: Self.resultLimit)
 
@@ -297,19 +245,12 @@ struct OverBudgetTests {
     }
 
     @Test
-    func overBudgetWithAnEmptyCatalogReturnsNoMatchesWithoutInvokingTheSessionFactory() async throws {
+    func overBudgetWithAnEmptyCatalogReturnsNoMatchesWithoutAPrompt() async throws {
         let recorder = DiagnosticRecorder()
-        let factoryCallCount = CallCounter()
-        let config = SelectionConfig(
-            model: { _ in
-                factoryCallCount.increment()
-                return ScriptedAgentSession([#"{"ids":[]}"#])
-            },
-            capacityCharacterLimit: Self.forcedOverBudgetLimit
-        )
+        let model = ScriptedLanguageModel([#"{"ids":[]}"#])
         let tier = SelectionTier(
             catalog: FixtureSelectionCatalog([]),
-            config: config,
+            config: SelectionConfig(model: model, capacityCharacterLimit: Self.forcedOverBudgetLimit),
             onDiagnostic: { recorder.record($0) }
         )
 
@@ -318,52 +259,44 @@ struct OverBudgetTests {
         // No candidate, no prompt: there is nothing to ask a model to choose
         // among, and nothing to report.
         #expect(matches.isEmpty)
-        #expect(factoryCallCount.count == 0)
+        #expect(model.calls.isEmpty)
         #expect(recorder.diagnostics.isEmpty)
     }
 
     // MARK: - Budget boundary
 
     @Test
-    func prefixExactlyAtTheCapacityLimitUsesTheCachedRootPath() async throws {
+    func prefixExactlyAtTheCapacityLimitSendsOnePromptWithTheWholeCatalog() async throws {
         let fullPrefix = Self.prefix(for: Self.catalog.ids)
-        let factoryCallCount = CallCounter()
-        let root = RootSessionRespondCalledDirectlySession(forkResponses: [
-            #"{"ids":["alpha"]}"#,
-            #"{"ids":["alpha"]}"#,
-        ])
-        let config = SelectionConfig(
-            model: { _ in
-                factoryCallCount.increment()
-                return root
-            },
-            capacityCharacterLimit: fullPrefix.count
-        )
-        let tier = Self.makeTier(config: config)
+        let model = Self.alphaModel(count: 1)
+        let tier = Self.makeTier(model, limit: fullPrefix.count)
 
         _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
-        _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
 
-        // Cached-root path: the factory runs exactly once, and every call
-        // forks -- the boundary itself (`==`) still counts as "under
-        // budget", matching `capacityCharacterLimit`'s own "at or under"
+        // The boundary itself (`==`) still counts as "under budget",
+        // matching `capacityCharacterLimit`'s own "at or under"
         // documentation.
-        #expect(factoryCallCount.count == 1)
-        #expect(root.forkCount == 2)
+        #expect(
+            model.calls == [
+                ScriptedModelCall(
+                    instructions: fullPrefix,
+                    prompt: ExpectedSelectionPrompt.request(for: "alpha", ids: Self.catalog.ids)
+                )
+            ]
+        )
     }
 
     @Test
     func prefixOneCharacterOverTheCapacityLimitSplitsTheCatalogIntoTwoPrompts() async throws {
         let fullPrefix = Self.prefix(for: Self.catalog.ids)
-        let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha"]}"#])
-        let config = SelectionConfig(model: factory.makeSession, capacityCharacterLimit: fullPrefix.count - 1)
-        let tier = Self.makeTier(config: config)
+        let model = Self.alphaModel(count: 2)
+        let tier = Self.makeTier(model, limit: fullPrefix.count - 1)
 
         _ = try await tier.search(intent: "alpha", limit: Self.resultLimit)
 
         // One character short of the whole catalog: the first four
         // equal-length entries fit one prompt, and the last one gets its own.
         let expectedRuns = [["alpha", "bravo", "delta", "gamma"], ["kappa"]]
-        #expect(factory.receivedInstructions == expectedRuns.map(Self.prefix(for:)))
+        #expect(model.calls.map(\.instructions) == expectedRuns.map(Self.prefix(for:)))
     }
 }

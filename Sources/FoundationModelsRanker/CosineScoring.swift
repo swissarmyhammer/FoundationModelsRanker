@@ -1,26 +1,19 @@
-// Ported from CodeContextKit's `Sources/CodeContextKit/Search/SearchCorpus.swift`
-// (`SearchCorpusSnapshot.matvecCosineScores`/`multiplyMatrixByVector`) and
-// FoundationModelsMetadataRegistry's `Sources/FoundationModelsMetadataRegistry/
-// MetadataSearcher.swift` (`MetadataSearcher.cosineSimilarity`). The two
-// repos' cosine-scoring strategies are really different. This file keeps
-// them side by side rather than unified, so either
-// consumer can adopt whichever fits its corpus representation.
-// No behavior changes.
+// The two cosine-scoring strategies here are really different. This file
+// keeps them side by side, not unified, so a consumer can adopt the one
+// that fits its corpus representation.
 
 import Accelerate
 
-/// Cosine-similarity scoring, in the two forms CodeContextKit and
-/// FoundationModelsMetadataRegistry each carry today:
+/// Cosine-similarity scoring, in two forms:
 ///
 /// - `matvecScores(matrix:rowCount:dimension:queryVector:)`: a single
 ///   `vDSP_mmul` matrix–vector product over a contiguous row-major matrix of
 ///   L2-normalized rows, where cosine similarity reduces to a plain dot
 ///   product. Suits a corpus that keeps its embeddings packed into one
-///   contiguous buffer (CodeContextKit's `SearchCorpusSnapshot`).
+///   contiguous buffer.
 /// - `cosineSimilarity(_:_:)`: the scalar per-vector `(a · b) / (|a| |b|)`
 ///   form, which works on un-normalized vectors and handles length
-///   mismatches. Suits a corpus that stores embeddings as separate arrays
-///   (FoundationModelsMetadataRegistry's `MetadataIndex`).
+///   mismatches. Suits a corpus that stores embeddings as separate arrays.
 ///
 /// `import Accelerate` is Apple-only — fine at FoundationModelsRanker's macOS 27 floor.
 public enum CosineScoring {

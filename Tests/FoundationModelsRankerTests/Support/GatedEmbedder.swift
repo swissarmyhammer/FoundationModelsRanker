@@ -1,24 +1,24 @@
 import Foundation
-import FoundationModelsRanker
+import FoundationModelsExtras
 import os
 
-/// A `TextEmbedding` test double whose `embed(_:)` call suspends until a
+/// A `PooledEmbedding` test double whose `embed(texts:)` call suspends until a
 /// test explicitly releases it -- lets a test inject a *specific*
 /// interleaving against a `StreamingSearchCorpus` actor's suspension point,
 /// deterministically, rather than hoping `withTaskGroup` stress happens to
 /// hit it.
 ///
-/// Exists for ^rayd7bq's race regression: `StreamingSearchCorpus
-/// .add(items:)` embeds new items via an `await embedder.embed(_:)` call,
+/// Exists for the add-path race regression: `StreamingSearchCorpus
+/// .add(items:)` embeds new items via an `await embedder.embed(texts:)` call,
 /// which is a genuine actor suspension point -- a concurrent `remove`/`add`
 /// on the same actor can run to completion while that call is in flight.
 /// `FakeEmbedder`/`CountingEmbedder` both resolve near-instantly, so a test
 /// built on either can't reliably land a second actor call *inside* that
 /// window. `GatedEmbedder` makes the window as wide as the test needs: hold
-/// every `embed(_:)` call open until `release()` is called, and let a test
+/// every `embed(texts:)` call open until `release()` is called, and let a test
 /// synchronize on exactly which call has started via
 /// `waitUntilEntered(callNumber:)`.
-final class GatedEmbedder: TextEmbedding, Sendable {
+final class GatedEmbedder: PooledEmbedding, Sendable {
     private let fake: FakeEmbedder
     private let releaseGate = OpenForeverGate()
     private let enteredGate = CountingGate()
@@ -36,25 +36,25 @@ final class GatedEmbedder: TextEmbedding, Sendable {
     /// Records this call as "entered" (for `waitUntilEntered(callNumber:)`
     /// to observe), then suspends until `release()` has been called, then
     /// embeds `texts` exactly like `FakeEmbedder`.
-    func embed(_ texts: [String]) async throws -> [[Float]] {
+    func embed(texts: [String]) async throws -> [[Float]] {
         enteredGate.signal()
         await releaseGate.wait()
-        return try await fake.embed(texts)
+        return try await fake.embed(texts: texts)
     }
 
-    /// Suspends until the `callNumber`-th call to `embed(_:)` (1-indexed,
+    /// Suspends until the `callNumber`-th call to `embed(texts:)` (1-indexed,
     /// in call order) has been entered -- whether that happened before or
     /// after this call. Lets a test synchronize on a *specific* embed call
     /// among several concurrent ones, not just "any call has started."
     ///
-    /// - Parameter callNumber: which `embed(_:)` call to wait for, in
+    /// - Parameter callNumber: which `embed(texts:)` call to wait for, in
     ///   1-indexed call order. Defaults to `1` (the first call).
     func waitUntilEntered(callNumber: Int = 1) async {
         await enteredGate.wait(untilCount: callNumber)
     }
 
     /// Opens the release gate permanently: every currently-parked
-    /// `embed(_:)` call resumes, and every future one returns immediately
+    /// `embed(texts:)` call resumes, and every future one returns immediately
     /// without parking.
     func release() {
         releaseGate.open()
@@ -116,7 +116,7 @@ private final class OpenForeverGate: @unchecked Sendable {
 /// suspends until the count has reached at least the given threshold --
 /// whether that happened before or after the call.
 ///
-/// Backs `GatedEmbedder`'s `waitUntilEntered(callNumber:)`: each `embed(_:)`
+/// Backs `GatedEmbedder`'s `waitUntilEntered(callNumber:)`: each `embed(texts:)`
 /// call signals once on entry, so waiting for count `N` is waiting for the
 /// `N`th call specifically, in the order calls actually entered.
 private final class CountingGate: @unchecked Sendable {

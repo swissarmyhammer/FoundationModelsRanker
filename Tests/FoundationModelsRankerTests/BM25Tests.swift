@@ -2,14 +2,8 @@ import Foundation
 import FoundationModelsRanker
 import Testing
 
-/// BM25F-lite scoring tests, ported from FoundationModelsMetadataRegistry's
-/// `BM25Tests.swift` (which adapted CodeContextKit's `RankerTests.swift`
-/// "BM25" section, itself a port of the Rust `swissarmyhammer-search`
-/// crate's `score.rs` test suite). The two
-/// field-weight constants are ported here to FoundationModelsRanker's neutral
-/// `BM25.primaryFieldWeight` / `BM25.bodyFieldWeight`. Kept
-/// alongside `BM25RankerTests` (ported from CodeContextKit) even where
-/// cases overlap — each repo's suite encodes its own edge-case history.
+/// BM25F-lite scoring tests, including the two field-weight constants
+/// `BM25.primaryFieldWeight` / `BM25.bodyFieldWeight`.
 struct BM25Tests {
     /// Reference Okapi BM25 term contribution, for hand-comparison against
     /// `BM25Corpus.score`.
@@ -93,8 +87,8 @@ struct BM25Tests {
     func primaryFieldMatchOutranksBodyOnlyMatchForSameTerm() {
         // Same corpus, same doc length; one doc's weighted tf comes from a
         // primary-field occurrence (x5), the other's from a body-field-only
-        // occurrence (x1) of the same term. This is the acceptance
-        // criterion for BM25.swift's two-field weighting.
+        // occurrence (x1) of the same term. This test checks the two-field
+        // weighting of BM25.swift.
         let query = ["parse"]
         let corpus = BM25Corpus(queryTokens: query, documents: [(4, Set(["parse"])), (4, Set(["parse"]))])
         let primaryFieldMatch = corpus.score(
@@ -135,12 +129,8 @@ struct BM25Tests {
     }
 }
 
-/// BM25 formula and golden-ordering tests, ported from CodeContextKit's
-/// `RankerTests.swift` "BM25" section and its "Golden ordering: fused BM25 +
-/// trigram ranking" section (which port the Rust `swissarmyhammer-search`
-/// crate's `score.rs` test suite). Kept alongside
-/// `BM25Tests` (ported from FoundationModelsMetadataRegistry) even where
-/// cases overlap — each repo's suite encodes its own edge-case history.
+/// BM25 formula tests, and golden-ordering tests for fused BM25 + trigram
+/// ranking.
 struct BM25RankerTests {
     /// Reference Okapi BM25 term contribution, for hand-comparison against
     /// `BM25Corpus.score`.
@@ -224,8 +214,8 @@ struct BM25RankerTests {
     func bm25PrimaryFieldMatchOutranksBodyOnlyMatchForSameTerm() {
         // Same corpus, same doc length; one doc's weighted tf comes from a
         // primary-field occurrence (x5), the other's from a body-field-only
-        // occurrence (x1) of the same term. This is the acceptance
-        // criterion for BM25.swift's two-field weighting.
+        // occurrence (x1) of the same term. This test checks the two-field
+        // weighting of BM25.swift.
         let query = ["parse"]
         let corpus = BM25Corpus(queryTokens: query, documents: [(4, Set(["parse"])), (4, Set(["parse"]))])
         let primaryFieldMatch = corpus.score(
@@ -264,8 +254,7 @@ struct BM25RankerTests {
         // Two documents share the query term "parse" in their body field,
         // but only "strong" also has it in the primary field (weight x5)
         // and an exact-identifier trigram match; RRF fusion of the BM25 and
-        // trigram rankings puts "strong" first, mirroring the Rust crate's
-        // `strong_high_weight_lexical_beats_mediocre` golden case.
+        // trigram rankings puts "strong" first.
         let query = ["parse"]
         let corpus = BM25Corpus(queryTokens: query, documents: [(6, Set(["parse"])), (6, Set(["parse"]))])
         let strongBm25 = corpus.score(

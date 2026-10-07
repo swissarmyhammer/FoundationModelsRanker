@@ -4,12 +4,8 @@
 // (`grep`/`glob`/`watch`), expanded here into the living proof of that
 // documentation.
 //
-// New to FoundationModelsRanker — no source file to port: neither CodeContextKit nor
-// FoundationModelsMetadataRegistry ships a catalog this shape. Modeled structurally on
-// FoundationModelsMetadataRegistry's `Examples/ExamplesSupport`'s
-// `baseGitCommands` fixture, generalized from five git subcommands to a
-// broader command-line surface so the demo has enough breadth to show BM25 +
-// trigram fusion doing real work.
+// The catalog has git subcommands and a broad set of other command-line
+// tools. This breadth lets the demo show BM25 + trigram fusion do real work.
 
 import FoundationModelsRanker
 
@@ -17,7 +13,7 @@ import FoundationModelsRanker
 ///
 /// Every `SearchItem`'s `summary` defaults to its `text` — this catalog has
 /// nothing shorter to offer the selection prefix.
-public let toolCatalog: [SearchItem] = [
+let toolCatalog: [SearchItem] = [
     SearchItem(id: "grep", text: "Search file contents with regular expressions"),
     SearchItem(id: "glob", text: "Find files by name pattern, sorted by mtime"),
     SearchItem(id: "watch", text: "Watch a directory and stream change events"),
@@ -77,7 +73,7 @@ public let toolCatalog: [SearchItem] = [
 /// wording, not just meaning — with exactly one catalog item's `text`, so
 /// the keyword-only (`--no-model`) path already surfaces a clear top match
 /// without needing the cosine signal or a selection model.
-public let demoQueries: [String] = [
+let demoQueries: [String] = [
     "search file contents for a pattern using a regular expression",
     "record my staged changes as a new commit",
     "how do I list or delete a branch",

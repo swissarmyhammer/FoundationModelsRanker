@@ -1,16 +1,16 @@
 import Foundation
+import FoundationModelsExtras
 import FoundationModelsRanker
 import Testing
 
 /// Tests for `StreamingSearchCorpus`: the actor-confined wrapper around
-/// `SearchCorpus` for the producer/consumer streaming case (^c79yg0f) --
+/// `SearchCorpus` for the producer/consumer streaming case --
 /// a producer appending/evicting items while a consumer queries, from
 /// arbitrary, unsynchronized tasks.
 ///
 /// Two concerns, two groups of tests: single-threaded equivalence (the
-/// actor surface must rank identically to the plain value type it wraps,
-/// per the "deterministic single-thread behavior unchanged" acceptance
-/// criterion), and genuine concurrent stress (every match a concurrent
+/// actor surface must rank identically to the plain value type it wraps),
+/// and genuine concurrent stress (every match a concurrent
 /// search returns must correspond to some fully-added item, never a torn
 /// mid-`add` read).
 struct StreamingSearchCorpusTests {
@@ -43,7 +43,7 @@ struct StreamingSearchCorpusTests {
         summary: "a short entry summary"
     )
 
-    /// The 1-indexed `embed(_:)` call the first `search(_:limit:)` on a
+    /// The 1-indexed `embed(texts:)` call the first `search(_:limit:)` on a
     /// corpus from `streamedRunACorpus(embedder:onDiagnostic:)` spends on its
     /// query.
     ///
@@ -55,7 +55,7 @@ struct StreamingSearchCorpusTests {
     /// stand in for the tests below.
     static let firstStreamedQueryEmbedCall = runAItems.count + 1
 
-    /// The 1-indexed `embed(_:)` call the second `search(_:limit:)` on such a
+    /// The 1-indexed `embed(texts:)` call the second `search(_:limit:)` on such a
     /// corpus spends on its query.
     ///
     /// A search embeds its query at most once, and a search whose query embed
@@ -82,7 +82,7 @@ struct StreamingSearchCorpusTests {
     ///     Defaults to doing nothing.
     /// - Returns: the corpus, with every `runAItems` item already added.
     static func streamedRunACorpus(
-        embedder: any TextEmbedding,
+        embedder: any PooledEmbedding,
         onDiagnostic: @escaping @Sendable (RankDiagnostic) -> Void = { _ in }
     ) async -> StreamingSearchCorpus {
         let actorCorpus = StreamingSearchCorpus(embedder: embedder, onDiagnostic: onDiagnostic)
@@ -273,7 +273,7 @@ struct StreamingSearchCorpusTests {
         #expect(finalCount == survivors.count)
     }
 
-    // MARK: - Incremental embed on the add path (^rayd7bq)
+    // MARK: - Incremental embed on the add path
 
     @Test
     func eachAddedItemIsEmbeddedExactlyOnceAtAddTimeAndOnlyTheQueryIsEmbeddedPerSearch() async {
@@ -305,10 +305,10 @@ struct StreamingSearchCorpusTests {
         let matches = await actorCorpus.search(query, limit: 10)
 
         #expect(!matches.isEmpty)
-        let queryVector = try await embedder.embed([query])[0]
+        let queryVector = try await embedder.embed(texts: [query])[0]
         for match in matches {
             let item = try #require(Self.runAItems.first { $0.id == match.id })
-            let itemVector = try await embedder.embed([item.text])[0]
+            let itemVector = try await embedder.embed(texts: [item.text])[0]
             let expectedCosine = CosineScoring.cosineSimilarity(queryVector, itemVector)
             #expect(match.signals?.cosine == expectedCosine)
         }
@@ -328,10 +328,10 @@ struct StreamingSearchCorpusTests {
         let matches = await actorCorpus.search(query, limit: 10)
 
         #expect(!matches.contains { $0.id == "a1" })
-        let queryVector = try await embedder.embed([query])[0]
+        let queryVector = try await embedder.embed(texts: [query])[0]
         for match in matches {
             let item = try #require(Self.runAItems.first { $0.id == match.id })
-            let itemVector = try await embedder.embed([item.text])[0]
+            let itemVector = try await embedder.embed(texts: [item.text])[0]
             #expect(match.signals?.cosine == CosineScoring.cosineSimilarity(queryVector, itemVector))
         }
     }
@@ -363,9 +363,9 @@ struct StreamingSearchCorpusTests {
         let matches = await actorCorpus.search(query, limit: 5)
         let match = try #require(matches.first { $0.id == "x" })
 
-        let queryVector = try await embedder.embed([query])[0]
-        let freshVector = try await embedder.embed([freshText])[0]
-        let staleVector = try await embedder.embed([originalText])[0]
+        let queryVector = try await embedder.embed(texts: [query])[0]
+        let freshVector = try await embedder.embed(texts: [freshText])[0]
+        let staleVector = try await embedder.embed(texts: [originalText])[0]
         let expectedCosine = CosineScoring.cosineSimilarity(queryVector, freshVector)
         #expect(match.signals?.cosine == expectedCosine)
         #expect(CosineScoring.cosineSimilarity(queryVector, staleVector) != expectedCosine)
@@ -422,9 +422,9 @@ struct StreamingSearchCorpusTests {
         // A plain (ungated) embedder produces identical vectors -- same
         // deterministic hash, same vector length -- without re-parking.
         let plainEmbedder = FakeEmbedder(vectorLength: 8)
-        let queryVector = try await plainEmbedder.embed([query])[0]
-        let freshVector = try await plainEmbedder.embed([freshText])[0]
-        let staleVector = try await plainEmbedder.embed([originalText])[0]
+        let queryVector = try await plainEmbedder.embed(texts: [query])[0]
+        let freshVector = try await plainEmbedder.embed(texts: [freshText])[0]
+        let staleVector = try await plainEmbedder.embed(texts: [originalText])[0]
         let expectedCosine = CosineScoring.cosineSimilarity(queryVector, freshVector)
 
         #expect(match.signals?.cosine == expectedCosine)
@@ -566,10 +566,10 @@ struct StreamingSearchCorpusTests {
         // is the deterministic embedder `CountingEmbedder` wraps.
         #expect(!recoveredMatches.isEmpty)
         let plainEmbedder = FakeEmbedder(vectorLength: 8)
-        let queryVector = try await plainEmbedder.embed([query])[0]
+        let queryVector = try await plainEmbedder.embed(texts: [query])[0]
         for match in recoveredMatches {
             let item = try #require(Self.runAItems.first { $0.id == match.id })
-            let itemVector = try await plainEmbedder.embed([item.text])[0]
+            let itemVector = try await plainEmbedder.embed(texts: [item.text])[0]
             #expect(match.signals?.cosine == CosineScoring.cosineSimilarity(queryVector, itemVector))
         }
         #expect(recoveredMatches.contains { ($0.signals?.cosine ?? 0.0) != 0.0 })
@@ -606,7 +606,7 @@ struct StreamingSearchCorpusTests {
     }
 
     /// With an embedder configured, `add(items:)`/`search(_:limit:)` each
-    /// suspend at an `await embedder.embed(_:)` call -- unlike every other
+    /// suspend at an `await embedder.embed(texts:)` call -- unlike every other
     /// method here, which never suspends. A concurrent `remove`/`add` can
     /// therefore run during that gap. This is the regression case for that:
     /// without `search(_:limit:)`'s pre-suspension snapshot (see its

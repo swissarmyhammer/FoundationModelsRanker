@@ -4,8 +4,8 @@ import Testing
 
 /// Tests for `Selection`'s `@Generable` schema shape, `SelectionCatalog`
 /// conformance, and `RankDiagnostic`'s value semantics
-/// — the remaining core-type coverage for this port not already exercised
-/// by `SelectionConfigTests`.
+/// — the core-type coverage that `SelectionConfigTests` does not already
+/// give.
 struct SelectionCoreTests {
     // MARK: - `Selection`'s `@Generable` schema shape
 

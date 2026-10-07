@@ -1,11 +1,7 @@
-// New to FoundationModelsRanker -- the queryable corpus behind `Searcher`,
-// generalized from the construct-once catalog the facade started with
-// (`Searcher`'s own private `ItemCatalog`, which this type replaces) to one
-// that also accepts items continuously. CodeContextKit's
-// `Sources/CodeContextKit/Search/SearchCorpus.swift` is the name's precedent,
-// but not a source to port: that corpus is storage-backed, and this package
-// stays storage-free by design (in-memory precompute only) -- persistence,
-// when a consumer wants it, is that consumer's concern.
+// The queryable corpus behind `Searcher`. You can build it once, and it
+// also accepts items continuously. This package has no storage by design
+// (in-memory precompute only). If a consumer needs persistence, that
+// consumer supplies it.
 //
 // The motivating shape is a corpus fed by a producer rather than assembled by
 // a caller: items append one at a time (one per event) and leave in cohorts
@@ -67,8 +63,7 @@ public struct SearchCorpus: SelectionCatalog, Sendable {
         /// when no embedder is in play).
         ///
         /// Stored on the row, keyed by id, rather than in a separate
-        /// positionally-aligned array (^rayd7bq: incremental embed on the
-        /// streaming add path). A corpus that streams -- rows appended by
+        /// positionally-aligned array. A corpus that streams -- rows appended by
         /// `add(items:)` and dropped by `evict(ids:)` -- can't keep a
         /// parallel array in sync with `ids`/`documents` the moment either
         /// happens; row-keyed storage has no such array to desync, and is
@@ -135,7 +130,7 @@ public struct SearchCorpus: SelectionCatalog, Sendable {
     /// - Parameter items: the items to add.
     /// - Returns: the ids actually added, in `items` order -- excludes any
     ///   dropped duplicates. This is exactly the set a caller embedding
-    ///   incrementally (^rayd7bq) should embed and pass to
+    ///   incrementally should embed and pass to
     ///   `setEmbedding(_:forID:ifTextMatches:)`: a duplicate this call
     ///   dropped was never added, so embedding its text would be wasted
     ///   work for a row that doesn't exist.
@@ -219,7 +214,7 @@ public struct SearchCorpus: SelectionCatalog, Sendable {
     ///   -- an id never added, or one since removed.
     public func block(forID id: String) -> String? { rows[id]?.text }
 
-    // MARK: - Embedding storage (^rayd7bq)
+    // MARK: - Embedding storage
 
     /// `id`'s stored embedding.
     ///
@@ -233,7 +228,7 @@ public struct SearchCorpus: SelectionCatalog, Sendable {
     /// its current text still equals `expectedText` -- the write is a no-op
     /// otherwise.
     ///
-    /// The incremental-embed write a streaming consumer (^rayd7bq) makes
+    /// The incremental-embed write a streaming consumer makes
     /// once per newly added item, right after `add(items:)` returns the ids
     /// it actually added and an embedder embeds their text in one batched
     /// call. `expectedText` should be exactly the text that was embedded to
@@ -249,9 +244,7 @@ public struct SearchCorpus: SelectionCatalog, Sendable {
     /// live again, just under a different row. Applying a stale vector to
     /// that new row would silently pair the wrong embedding with the wrong
     /// text, with no diagnostic and no way to detect the corruption later.
-    /// Mirrors FoundationModelsMetadataRegistry's `MetadataIndex
-    /// .mergingEmbeddings`'s block-hash guard against exactly this shape of
-    /// race, generalized here to a direct text comparison.
+    /// A direct text comparison is the guard against this race.
     ///
     /// - Parameters:
     ///   - embedding: the embedding to store.

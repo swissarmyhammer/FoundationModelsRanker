@@ -1,5 +1,5 @@
 import Foundation
-import FoundationModelsRanker
+import FoundationModelsExtras
 import os
 
 /// The error `CountingEmbedder` throws for each call inside its failure
@@ -11,14 +11,14 @@ import os
 /// payload, and it is `Equatable` for a test that does compare it.
 struct CountingEmbedderFailure: Error, Equatable {}
 
-/// A `TextEmbedding` test double that counts how many times `embed(_:)` is
+/// A `PooledEmbedding` test double that counts how many times `embed(texts:)` is
 /// called, wrapping `FakeEmbedder` for deterministic vectors underneath, and
 /// that can fail for a window of call numbers.
 ///
-/// Exists for `StreamingSearchCorpus`'s incremental-embed economy (^rayd7bq):
+/// Exists for `StreamingSearchCorpus`'s incremental-embed economy:
 /// "each added item is embedded exactly once, at add time" and "only the
 /// query string is embedded per search" are both claims about *how many
-/// times* `embed(_:)` runs, not just what it returns -- `FakeEmbedder` alone
+/// times* `embed(texts:)` runs, not just what it returns -- `FakeEmbedder` alone
 /// has no way to assert that. A test drives calls in a known order (adds,
 /// then searches) and reads `callCount` before/after each phase to assert the
 /// expected delta.
@@ -37,15 +37,15 @@ struct CountingEmbedderFailure: Error, Equatable {}
 /// contribute -- needs that window: it is the only way a test can hold the
 /// caller constant and change nothing but the health of the embedder, and
 /// thus show that the caller keeps no memory of the failure.
-final class CountingEmbedder: TextEmbedding, Sendable {
+final class CountingEmbedder: PooledEmbedding, Sendable {
     private let fake: FakeEmbedder
     private let callCountBox = OSAllocatedUnfairLock<Int>(initialState: 0)
 
-    /// The 1-indexed call number from which `embed(_:)` throws, or `nil` when
+    /// The 1-indexed call number from which `embed(texts:)` throws, or `nil` when
     /// this embedder always succeeds.
     private let failingFromCall: Int?
 
-    /// The 1-indexed call number at which `embed(_:)` embeds normally again,
+    /// The 1-indexed call number at which `embed(texts:)` embeds normally again,
     /// or `nil` when the failure has no end.
     private let recoveringAtCall: Int?
 
@@ -59,10 +59,10 @@ final class CountingEmbedder: TextEmbedding, Sendable {
     ///
     /// - Parameters:
     ///   - vectorLength: the length of every vector this embedder produces.
-    ///   - failingFromCall: the 1-indexed call number from which `embed(_:)`
+    ///   - failingFromCall: the 1-indexed call number from which `embed(texts:)`
     ///     throws `CountingEmbedderFailure` in place of vectors. Each earlier
     ///     call embeds normally. Defaults to `nil`, which never fails.
-    ///   - recoveringAtCall: the 1-indexed call number from which `embed(_:)`
+    ///   - recoveringAtCall: the 1-indexed call number from which `embed(texts:)`
     ///     embeds normally again. Each call at or after this number succeeds.
     ///     Defaults to `nil`, which never recovers. Has no effect when
     ///     `failingFromCall` is `nil`, and no effect on a call before
@@ -73,13 +73,13 @@ final class CountingEmbedder: TextEmbedding, Sendable {
         fake = FakeEmbedder(vectorLength: vectorLength)
     }
 
-    /// The number of times `embed(_:)` has been called so far.
+    /// The number of times `embed(texts:)` has been called so far.
     var callCount: Int { callCountBox.withLock { $0 } }
 
     /// Increments the call count, then throws `CountingEmbedderFailure` when
     /// this call number falls inside the failure window, or returns
     /// embeddings from the wrapped embedder.
-    func embed(_ texts: [String]) async throws -> [[Float]] {
+    func embed(texts: [String]) async throws -> [[Float]] {
         let callNumber = callCountBox.withLock { count in
             count += 1
             return count
@@ -87,7 +87,7 @@ final class CountingEmbedder: TextEmbedding, Sendable {
         if fails(callNumber: callNumber) {
             throw CountingEmbedderFailure()
         }
-        return try await fake.embed(texts)
+        return try await fake.embed(texts: texts)
     }
 
     /// Answers whether the call with this 1-indexed number falls inside the

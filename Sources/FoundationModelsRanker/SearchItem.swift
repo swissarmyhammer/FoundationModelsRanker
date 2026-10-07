@@ -1,11 +1,7 @@
-// New to FoundationModelsRanker -- the trivial unit `Searcher` (Searcher.swift)
-// answers `search(_:limit:)` calls over: "a list of things to search, then a
-// query" is the whole API, and the things to search need only an id and the
-// text that describes them. No source file to port -- neither CodeContextKit
-// nor FoundationModelsMetadataRegistry exposes a bare id+text seam this
-// shape; FMR's own `SearchableMetadata` protocol is the closest structural
-// precedent (an id-keyed conformer rendering its own block/summary), but it
-// requires a richer "render a block" shape FoundationModelsRanker's facade doesn't need.
+// The unit that `Searcher` (Searcher.swift) searches in its
+// `search(_:limit:)` calls. The API is "a list of things to search, then a
+// query". Each thing to search needs only an id and the text that
+// describes it.
 
 /// A richer type's seam into `Searcher` without wrapping it in `SearchItem`:
 /// an id, the text `Searcher` indexes for retrieval, and a
@@ -29,10 +25,9 @@ public protocol Searchable: Sendable {
     /// scores against the query (`text` is the lower-weighted body half).
     ///
     /// Defaults to `id`, so a conformer with nothing more salient than its
-    /// id to rank on need not override it -- and every existing conformer
-    /// keeps its prior behavior, in which the id *was* the primary field.
-    /// A conformer whose ranking should key on a distinct salient field --
-    /// a title, a symbol path -- returns that here while keeping `id` as a
+    /// id to rank on need not override it. A conformer whose ranking should
+    /// key on a distinct salient field -- a title, a symbol path -- returns
+    /// that here while keeping `id` as a
     /// separate opaque identity. Decoupling the two also lifts `id`'s
     /// uniqueness requirement off that field: two items may share a
     /// `primaryText` while carrying distinct ids, where collapsing both
@@ -63,9 +58,9 @@ public protocol Searchable: Sendable {
 }
 
 extension Searchable {
-    /// The default primary field: `id` itself -- the pre-`primaryText`
-    /// behavior, in which a conformer's id doubled as its primary retrieval
-    /// field. A conformer with a more salient field to weight (a title, a
+    /// The default primary field: `id` itself, so the id is also the
+    /// primary retrieval field. A conformer with a more salient field to
+    /// weight (a title, a
     /// symbol path) overrides this.
     public var primaryText: String { id }
 
@@ -95,8 +90,7 @@ public struct SearchItem: Searchable, Sendable, Equatable {
     /// This item's primary retrieval field, weighted `BM25
     /// .primaryFieldWeight`. Defaults to `id` when
     /// `init(id:text:primaryText:summary:group:)` receives no explicit
-    /// value -- the pre-`primaryText` behavior, where the id was the
-    /// primary field.
+    /// value, so the id is also the primary field.
     public let primaryText: String
 
     /// This item's full text.
@@ -118,7 +112,7 @@ public struct SearchItem: Searchable, Sendable, Equatable {
     ///   - text: this item's full text.
     ///   - primaryText: this item's primary retrieval field, weighted
     ///     `BM25.primaryFieldWeight`. Defaults to `id` when `nil` (the
-    ///     default) -- the pre-`primaryText` behavior.
+    ///     default).
     ///   - summary: this item's summary, seeding the selection prefix.
     ///     Defaults to `text` when `nil` (the default).
     ///   - group: this item's eviction group. Defaults to `nil` -- an

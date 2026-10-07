@@ -5,9 +5,9 @@ import Testing
 /// Drives `SelectionTier` against a live `SystemLanguageModel`, so a run
 /// needs a Mac with Apple Intelligence turned on.
 ///
-/// The root package holds the hermetic tests of the same seam
-/// (`Tests/FoundationModelsRankerTests/AgentSessionDispatchTests.swift`).
-/// Each one scripts an `AgentSession` double and reaches no model. This
+/// The root package holds the hermetic tests of the tier
+/// (`Tests/FoundationModelsRankerTests/SelectionTests.swift`). Each one
+/// scripts a FoundationModels model double and reaches no real model. This
 /// target holds the tests that need the real model instead. Nothing selects
 /// between the two at run time: this target lives only in the nested
 /// `IntegrationTests` package, so `swift test` at the repository root cannot
@@ -25,28 +25,22 @@ struct SelectionTierRealModelTests {
         .init(id: "listDirectory", description: "lists the entries of a directory"),
     ])
 
-    /// A bare `LanguageModelSession` must reach its native guided generation
-    /// through `SelectionTier`.
+    /// `SelectionTier` on `SystemLanguageModel.default` must get catalog ids
+    /// back through the native guided generation of its sessions.
     ///
-    /// `AgentSession` names `respond(to:generating:)` as a protocol
-    /// requirement, so a call through `any AgentSession` reaches the
-    /// session's own typed override. Without the requirement the call binds
-    /// to the protocol extension's default, which asks the model for free
-    /// text and then fails to decode that text as JSON. Only a real
-    /// `SystemLanguageModel` has native guided generation to reach, so only
-    /// this test can hold the claim.
-    @Test("A bare LanguageModelSession reaches guided generation")
-    func aBareLanguageModelSessionReachesGuidedGeneration() async throws {
+    /// The tier makes a `LanguageModelSession` on the model for each prompt
+    /// and asks for a `Selection`. Only a real `SystemLanguageModel` has
+    /// native guided generation to reach, so only this test can hold the
+    /// claim that the answer decodes and names catalog ids.
+    @Test("The system model answers a selection with catalog ids through guided generation")
+    func theSystemModelAnswersASelectionWithCatalogIDs() async throws {
         let catalog = Self.catalog
-        let config = SelectionConfig(model: { instructions in
-            LanguageModelSession(model: SystemLanguageModel.default, instructions: instructions)
-        })
+        let config = SelectionConfig(model: SystemLanguageModel.default)
         let tier = SelectionTier(
             catalog: catalog,
             config: config,
             // A diagnostic on this path means the tier could not resolve
-            // what the model answered, which is the failure the protocol
-            // requirement removes. Record it where it happens, so the
+            // what the model answered. Record it where it happens, so the
             // failure names the diagnostic itself.
             onDiagnostic: { diagnostic in
                 Issue.record("The selection tier reported \(diagnostic).")

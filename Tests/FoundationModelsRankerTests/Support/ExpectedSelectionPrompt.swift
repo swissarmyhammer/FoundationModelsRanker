@@ -8,8 +8,8 @@ enum ExpectedSelectionPrompt {
     /// `<request>` block, then the line that asks for the exact ids and
     /// names the ids of the prompt's candidates as the only choices.
     ///
-    /// A `.factory` session gets this text alone. A `.session` session gets
-    /// the assembled prefix, one blank line, and then this text.
+    /// Each prompt is this text alone: the assembled prefix is the
+    /// instructions of the session, not a part of the prompt.
     ///
     /// - Parameters:
     ///   - intent: the plain-language search intent.

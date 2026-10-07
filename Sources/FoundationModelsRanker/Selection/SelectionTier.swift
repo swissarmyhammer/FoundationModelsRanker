@@ -1,25 +1,11 @@
-// Ported from FoundationModelsMetadataRegistry's
-// `Sources/FoundationModelsMetadataRegistry/Selection/SelectionTier.swift`,
-// generalized over `any SelectionCatalog` instead of
-// `MetadataIndex<Item>`: `index.ids`/`item(forID:)`/`block(forID:)`/
-// `renderSummaryBlock()` map onto `catalog.ids`/`summaryBlock(forID:)`/
-// `block(forID:)`; `Match<Item>` becomes `SelectionMatch` (no catalog item to
-// carry); `MetadataDiagnostic` becomes `RankDiagnostic`.
-//
-// Task ^kqp9e5e removed every retrieval step from this tier. The source tier
-// ranked the whole catalog with BM25, trigram, and cosine after the model
-// answered (to score the picks) and before the prompt over budget (to cut the
-// candidates to the top M). This tier makes one prompt that picks, and
+// This tier runs no retrieval step. It makes one prompt that picks, and
 // nothing else: a pick is scored by its position in the answer, and an
-// over-budget catalog is split into several prompts rather than cut.
+// over-budget catalog is split into several prompts, not cut.
 
-import Foundation
+import FoundationModels
 
-/// The selection tier's dynamic session over a `SelectionCatalog`:
-/// generalizes FoundationModelsMetadataRegistry's own `SelectionTier`,
-/// which itself generalized Multitool's shipped `Librarian`
-/// (`../FoundationModelsMultitool/Sources/.../Librarian.swift`), over any
-/// narrow `SelectionCatalog` conformer instead of a bespoke index type.
+/// The selection tier's dynamic session over any narrow `SelectionCatalog`
+/// conformer.
 ///
 /// Assembles a prefix from `SelectionConfig.preamble` and one
 /// `<candidate>` block for each catalog id. The block holds an `id:` line
@@ -36,79 +22,60 @@ import Foundation
 /// `SelectionMatch` it returns carries an order score (`1 / rank`) and no
 /// `signals`.
 ///
-/// **Under budget** (assembled prefix ≤ `capacityCharacterLimit`): a cached
-/// root session is seeded once with the prefix, and each
-/// `search(intent:limit:)` `fork()`s a fresh child from it, so the prefix's
-/// KV cache is prefilled once and inherited per call — lifted from
-/// `Librarian.findAPIs(task:)`'s cached-root + fork-per-call mechanics.
+/// **One session for each prompt.** Each prompt goes to a new
+/// `LanguageModelSession` on `SelectionConfig.model`. The assembled prefix
+/// is the instructions of the session, and the prompt is the request part
+/// only: the intent in a `<request>` block, and a line that asks for the
+/// exact ids and names the ids of the prompt's candidates as the only
+/// choices (`prompt(intent:ids:)`). No prompt sees the turns of another
+/// prompt.
+///
+/// **Under budget** (assembled prefix ≤ `capacityCharacterLimit`): one
+/// prompt shows the whole catalog.
 ///
 /// **Over budget**: the catalog ids are split, in catalog order, into runs
 /// whose assembled prefix each fits the budget, and every run gets one
-/// prompt on a **fresh, uncached one-off session**. Every id reaches exactly
-/// one prompt. The answers are merged in run order, then in the model's
-/// order inside each run. `search(intent:limit:)` documents the design.
+/// prompt. Every id reaches exactly one prompt. The answers are merged in
+/// run order, then in the model's order inside each run.
+/// `search(intent:limit:)` documents the design.
 ///
-/// **Where the prefix goes** follows `SelectionConfig.sessionSource`. A
-/// `.factory` source seeds the prefix as each session's instructions, so the
-/// prompt carries only the request part: the intent in a `<request>` block,
-/// and a line that asks for the exact ids and names the ids of the prompt's
-/// candidates as the only choices. A `.session` source hands over
-/// one live session, which takes no new instructions: the tier forks that
-/// session for each prompt and carries the prefix above the same request
-/// part instead (`prompt(prefix:intent:ids:)`). Either way the model sees the
-/// same prefix, and reads the intent as a request to select for.
-///
-/// **IDs only**: the guided output is
-/// `Selection { ids: [String] }`. The assembled prefix shows every candidate
-/// id on its own `id:` line, so the model can read and copy the ids it may
-/// return.
-/// This tier applies no grammar of its own: a caller that wants guided
-/// generation applies one when it makes the session, and
-/// `idEnumSchema(ids:)` gives that caller the id set. Returned ids map back
-/// through the catalog to verbatim `SelectionMatch`es; an id the catalog
-/// does not hold is filtered and reported via
-/// `RankDiagnostic.unknownSelectedId(id:)`.
+/// **IDs only**: the guided output is `Selection { ids: [String] }`, through
+/// the native guided generation of the session. The assembled prefix shows
+/// every candidate id on its own `id:` line, so the model can read and copy
+/// the ids it may return. Returned ids map back through the catalog to
+/// verbatim `SelectionMatch`es; an id the catalog does not hold is filtered
+/// and reported via `RankDiagnostic.unknownSelectedId(id:)`.
 public actor SelectionTier {
+    /// The candidates of one prompt: their ids, in catalog order, and the
+    /// assembled prefix that shows them.
+    private struct CandidateRun: Sendable {
+        /// The candidate ids that `prefix` shows, in prefix order. The
+        /// prompt names these ids as the only choices.
+        let ids: [String]
+
+        /// The instructions of the session that this run's prompt goes to.
+        let prefix: String
+    }
+
     /// The full catalog this tier answers `search(intent:limit:)` calls
     /// over.
     private let catalog: any SelectionCatalog
 
-    /// This tier's session source, preamble, and capacity budget.
+    /// This tier's model, preamble, and capacity budget.
     private let config: SelectionConfig
 
-    /// `assemblePrefix(preamble:catalog:)`, precomputed once at `init` since
-    /// `catalog` never changes for this tier's lifetime.
-    private let assembledPrefix: String
-
-    /// The ids that `assembledPrefix` shows, in catalog order: each catalog
-    /// id that has a summary block. The under-budget prompt names these ids
-    /// as the only choices (`prompt(prefix:intent:ids:)`). Precomputed once
-    /// at `init`, like `assembledPrefix`.
-    private let assembledIDs: [String]
-
-    /// `catalog.ids` split into the runs the over-budget path prompts, one
-    /// prompt per run (`candidateRuns(preamble:catalog:limit:)`).
-    /// Precomputed once at `init`, like `assembledPrefix`, and read only
-    /// when the whole prefix does not fit the budget.
-    private let candidateRuns: [[String]]
+    /// The runs that each search prompts, one prompt per run: one run with
+    /// the whole catalog under budget, or the runs of
+    /// `candidateRuns(preamble:catalog:limit:)` over budget. Precomputed once
+    /// at `init`, since `catalog` never changes for this tier's lifetime.
+    private let runs: [CandidateRun]
 
     /// Called for every diagnostic this tier emits (currently
     /// `.unknownSelectedId`).
     private let onDiagnostic: @Sendable (RankDiagnostic) -> Void
 
-    /// The task that makes this tier's cached root session — `nil` until the
-    /// first under-budget `search(intent:limit:)` call starts it.
-    ///
-    /// The tier keeps the task, not the session, because the factory can
-    /// `await`. While one search awaits the factory, the actor can start a
-    /// second search. That search awaits the same task, so the factory makes
-    /// one root only. When the factory throws, `cachedRootSession()` clears
-    /// the task, so that the next search asks the factory again.
-    private var rootSessionTask: Task<any AgentSession, any Error>?
-
     /// One blank line: the text between the preamble and the first
-    /// candidate entry, between two candidate entries, and between a prefix
-    /// and the request part of a `.session` prompt.
+    /// candidate entry, and between two candidate entries.
     private static let partSeparator = "\n\n"
 
     /// The start of the last line of each prompt, below the `<request>`
@@ -124,12 +91,12 @@ public actor SelectionTier {
     /// The text between two ids in the list of `idChoices(_:)`.
     private static let idChoicesSeparator = ", "
 
-    /// Creates a selection tier over `catalog`, using `config`'s session
-    /// source, preamble, and budget.
+    /// Creates a selection tier over `catalog`, using `config`'s model,
+    /// preamble, and budget.
     ///
     /// - Parameters:
     ///   - catalog: the catalog to answer `search(intent:limit:)` calls over.
-    ///   - config: this tier's session source, preamble, and budget.
+    ///   - config: this tier's model, preamble, and budget.
     ///   - onDiagnostic: called for every diagnostic this tier emits.
     public init(
         catalog: any SelectionCatalog,
@@ -138,177 +105,79 @@ public actor SelectionTier {
     ) {
         self.catalog = catalog
         self.config = config
-        self.assembledPrefix = Self.assemblePrefix(preamble: config.preamble, catalog: catalog)
-        self.assembledIDs = catalog.ids.filter { catalog.summaryBlock(forID: $0) != nil }
-        self.candidateRuns = Self.candidateRuns(
-            preamble: config.preamble,
-            catalog: catalog,
-            limit: config.capacityCharacterLimit
-        )
+        self.runs = Self.runs(preamble: config.preamble, catalog: catalog, limit: config.capacityCharacterLimit)
         self.onDiagnostic = onDiagnostic
-    }
-
-    /// Cancels the root session task if it still runs. No search can await
-    /// the task after the tier is gone.
-    deinit {
-        rootSessionTask?.cancel()
-    }
-
-    /// Creates a selection tier and ignores `retrievalRanking`.
-    ///
-    /// The tier ranks nothing since task ^kqp9e5e, so the closure is never
-    /// called. This initializer keeps a consumer that still passes one
-    /// compiling (`FoundationModelsMetadataRegistry`'s `MetadataSearcher`
-    /// builds the tier this way) until it moves to
-    /// `init(catalog:config:onDiagnostic:)`.
-    ///
-    /// - Parameters:
-    ///   - catalog: the catalog to answer `search(intent:limit:)` calls over.
-    ///   - config: this tier's session source, preamble, and budget.
-    ///   - onDiagnostic: called for every diagnostic this tier emits.
-    ///   - retrievalRanking: ignored. The tier makes one prompt that picks
-    ///     and never ranks the catalog.
-    @available(
-        *, deprecated,
-        message: "The selection tier never ranks the catalog; `retrievalRanking` is ignored. Use init(catalog:config:onDiagnostic:)."
-    )
-    public init(
-        catalog: any SelectionCatalog,
-        config: SelectionConfig,
-        onDiagnostic: @escaping @Sendable (RankDiagnostic) -> Void,
-        retrievalRanking: @escaping @Sendable (String) async -> [SelectionMatch]
-    ) {
-        self.init(catalog: catalog, config: config, onDiagnostic: onDiagnostic)
     }
 
     /// Answers one `search(intent:limit:)` call with one prompt per run of
     /// candidates, and no retrieval pass.
     ///
-    /// Under budget: reuses (creating on first use) this tier's cached root
-    /// session, seeded with the full assembled prefix, and `fork()`s a fresh
-    /// child per call so the prefix's prefilled compute is inherited rather
-    /// than replayed. One prompt goes out, and its answer is the result.
+    /// Under budget, one prompt goes out, and its answer is the result.
     ///
     /// Over budget, the tier splits the catalog rather than cutting it. The
     /// catalog ids are divided, in catalog order, into runs whose assembled
     /// prefix each fits `capacityCharacterLimit` (`candidateRuns`). An entry
     /// that does not fit the budget alone still gets a run of its own,
-    /// because the tier cannot make a prompt smaller than one entry. Each
-    /// run gets one prompt on a one-off session, and every run is prompted
-    /// before the result is cut to `limit`, so a later run's pick is never
-    /// lost to an early stop. The answers are merged in run order, then in
-    /// the model's order inside each run. The cost is one prompt per run per
-    /// search, and no retrieval ranking picks which ids the model sees:
-    /// every id reaches exactly one prompt.
+    /// because the tier cannot make a prompt smaller than one entry. Every
+    /// run is prompted before the result is cut to `limit`, so a later run's
+    /// pick is never lost to an early stop. The answers are merged in run
+    /// order, then in the model's order inside each run. The cost is one
+    /// prompt per run per search, and no retrieval ranking picks which ids
+    /// the model sees: every id reaches exactly one prompt.
     ///
-    /// A `.session` source is forked once per prompt, so a session whose
-    /// `fork()` gives back `self` (`LanguageModelSession`) adds one turn per
-    /// run to its transcript on an over-budget search.
+    /// The runs are prompted one after another, not concurrently, because
+    /// the merged order is the run order.
     ///
     /// - Parameters:
     ///   - intent: the plain-language search intent.
     ///   - limit: the maximum number of matches to return. `limit <= 0`
-    ///     yields an empty result without forking or creating a session.
+    ///     yields an empty result without a prompt.
     /// - Returns: the selected ids' verbatim `SelectionMatch`es, in the
     ///   model's order, each scored by its position (`1 / rank`) and
     ///   carrying no `signals`, at most `limit`. A catalog with no ids
-    ///   yields an empty result without forking or creating a session: it
-    ///   has no id to select, and a model that gets a prompt with no
-    ///   candidates answers with text that does not decode.
-    /// - Throws: whatever a `.factory` source throws when it makes a
-    ///   session, or whatever the underlying session's
-    ///   `fork()`/`respond(to:generating:)` throws.
+    ///   yields an empty result without a prompt: it has no id to select,
+    ///   and a model that gets a prompt with no candidates answers with text
+    ///   that does not decode.
+    /// - Throws: whatever `LanguageModelSession.respond(to:generating:)`
+    ///   throws.
     public func search(intent: String, limit: Int) async throws -> [SelectionMatch] {
-        guard limit > 0 else { return [] }
-        guard !catalog.ids.isEmpty else { return [] }
-        guard assembledPrefix.count <= config.capacityCharacterLimit else {
-            return matches(forIDs: try await selectFromEveryRun(intent: intent), limit: limit)
+        guard limit > 0, !catalog.ids.isEmpty else { return [] }
+        var selectedIDs: [String] = []
+        for run in runs {
+            let session = LanguageModelSession(model: config.model, instructions: run.prefix)
+            let selection = try await session.respond(
+                to: Self.prompt(intent: intent, ids: run.ids),
+                generating: Selection.self
+            ).content
+            selectedIDs.append(contentsOf: selection.ids)
         }
-
-        let child = try await cachedRootSession().fork()
-        let selection = try await child.respond(
-            to: prompt(prefix: assembledPrefix, intent: intent, ids: assembledIDs),
-            generating: Selection.self
-        )
-        return matches(forIDs: selection.ids, limit: limit)
-    }
-
-    /// Returns this tier's cached root session, creating and caching it on
-    /// first use.
-    ///
-    /// A `.factory` source makes the root from the full assembled prefix, so
-    /// the prefix is the root's instructions. A `.session` source is the
-    /// root as it stands: a live session takes no new instructions, so
-    /// `prompt(prefix:intent:ids:)` carries the prefix instead. Either root is
-    /// forked once per call by `search(intent:limit:)`.
-    ///
-    /// Searches that start while the root is not ready await the same
-    /// `rootSessionTask`, so a `.factory` source is awaited one time for the
-    /// root. A factory error comes out of every search that awaits it, and
-    /// clears the task, so that a later search asks the factory again.
-    ///
-    /// - Returns: the cached root session -- every catalog id is a legal
-    ///   selection under budget, since the assembled prefix already
-    ///   summarizes the whole catalog.
-    /// - Throws: whatever a `.factory` source throws.
-    private func cachedRootSession() async throws -> any AgentSession {
-        let task = rootSessionTask ?? makeRootSessionTask()
-        rootSessionTask = task
-        do {
-            return try await task.value
-        } catch {
-            if rootSessionTask == task {
-                rootSessionTask = nil
-            }
-            throw error
-        }
-    }
-
-    /// Starts the task that makes this tier's root session from its session
-    /// source.
-    ///
-    /// - Returns: the task, which gives the session that
-    ///   `config.sessionSource` makes from the full assembled prefix, or the
-    ///   supplied session itself.
-    private func makeRootSessionTask() -> Task<any AgentSession, any Error> {
-        let sessionSource = config.sessionSource
-        let prefix = assembledPrefix
-        return Task {
-            switch sessionSource {
-            case .factory(let makeSession):
-                return try await makeSession(prefix)
-            case .session(let suppliedSession):
-                return suppliedSession
-            }
-        }
+        return matches(forIDs: selectedIDs, limit: limit)
     }
 
     /// Assembles the prompt for one model call.
     ///
-    /// Both the cached-root path and the over-budget path prompt through
-    /// this one function, so the two cannot drift apart.
-    ///
-    /// Every prompt has the same request part, whatever the session source:
-    /// the intent between a `<request>` line and a `</request>` line, then
-    /// one line with `exactIDsLine` and `idChoices(_:)`.
+    /// Every prompt has the same shape: the intent between a `<request>`
+    /// line and a `</request>` line, then one line with `exactIDsLine` and
+    /// `idChoices(_:)`. The prefix is never in the prompt: it is the
+    /// instructions of the session.
     ///
     /// The `<request>` block tells the model that the message is a request
     /// to *select candidates for*, not a task to *do*. Many search intents
     /// read as an order to the model itself -- "record my staged changes as
     /// a new commit", "how do I list or delete a branch" -- and a session
     /// that has answered nothing yet has nothing but the prompt to tell the
-    /// two apart. A `# Task` heading did this job before card `^knyvhkf`.
-    /// Measured on the on-device system model over `FullMonty`'s four demo
-    /// queries, five cold runs each on a new `Searcher`: without the
-    /// heading the two order-shaped queries answered 0 of 5 and 3 of 5;
-    /// with it, every query answered 5 of 5.
+    /// two apart. A `# Task` heading can also do this job.
+    /// Measured on the on-device system model over the four queries of
+    /// `ZeroConfigSearcherRealModelTests`, five cold runs each on a new
+    /// `Searcher`: without the heading the two order-shaped queries
+    /// answered 0 of 5 and 3 of 5; with it, every query answered 5 of 5.
     ///
     /// `exactIDsLine` comes last, so the last text the model reads before
     /// it answers asks for the exact ids. A real model shortened a URI id to
     /// its last path part when no text asked for the exact id.
     ///
     /// `idChoices(_:)` follows it on the same line and names the ids of the
-    /// prompt's candidates as the only choices (card `^5ex1cd0`). Without
+    /// prompt's candidates as the only choices. Without
     /// the list, the on-device system model made up ids from a verb of the
     /// request and the form of the catalog ids. Over the nine-function
     /// catalog of `FunctionCatalogRealModelTests`, one cold session for each
@@ -317,31 +186,16 @@ public actor SelectionTier {
     /// write, append, delete, move" answered `files.delete` in 1 of 20.
     /// Five changes to the preamble and the `Selection.ids` guide each moved
     /// the made-up id to a different query: "how do I list or delete a
-    /// branch" over `FullMonty`'s catalog answered the made-up id `delete`
-    /// in up to 20 of 20 searches. With the list, these three queries
-    /// answered no made-up id in 20 searches each.
-    ///
-    /// The request part is where the two sources stop being alike. A
-    /// `.factory` source already seeded `prefix` as the session's
-    /// instructions, so its prompt is the request part alone. A `.session`
-    /// source cannot take new instructions, so its prompt carries the whole
-    /// prefix, one blank line, and then the request part; without the
-    /// prefix the model never sees the catalog and can return no id at all.
+    /// branch" over the catalog of `ZeroConfigSearcherRealModelTests`
+    /// answered the made-up id `delete` in up to 20 of 20 searches. With the
+    /// list, these three queries answered no made-up id in 20 searches each.
     ///
     /// - Parameters:
-    ///   - prefix: this call's assembled candidate prefix -- the whole
-    ///     catalog under budget, one run's candidates over budget.
     ///   - intent: the plain-language search intent.
-    ///   - ids: the candidate ids in `prefix`, in prefix order.
+    ///   - ids: the candidate ids of the prompt's prefix, in prefix order.
     /// - Returns: the prompt text to send.
-    private func prompt(prefix: String, intent: String, ids: [String]) -> String {
-        let request = "<request>\n\(intent)\n</request>\n\(Self.exactIDsLine) \(Self.idChoices(ids))"
-        switch config.sessionSource {
-        case .factory:
-            return request
-        case .session:
-            return "\(prefix)\(Self.partSeparator)\(request)"
-        }
+    private static func prompt(intent: String, ids: [String]) -> String {
+        "<request>\n\(intent)\n</request>\n\(exactIDsLine) \(idChoices(ids))"
     }
 
     /// The sentence that names `ids` as the only ids the model can answer
@@ -354,52 +208,28 @@ public actor SelectionTier {
         "\(idChoicesLead)\(ids.joined(separator: idChoicesSeparator))."
     }
 
-    // MARK: - Over budget: one prompt per run of candidates
+    // MARK: - Runs of candidates
 
-    /// Answers one over-budget search: prompts every run of `candidateRuns`
-    /// in turn and merges the answered ids in run order.
+    /// Makes the runs that each search prompts.
     ///
-    /// The runs are prompted one after another, not concurrently, because a
-    /// `.session` source forks one live session whose transcript grows with
-    /// each prompt, and because the merged order is the run order.
+    /// When the whole assembled prefix fits `limit`, there is one run: each
+    /// catalog id that has a summary block, under the whole prefix.
+    /// Otherwise the runs are those of `candidateRuns(preamble:catalog:limit:)`,
+    /// each with its own assembled prefix.
     ///
-    /// - Parameter intent: the plain-language search intent.
-    /// - Returns: every id the model answered, run by run, in the model's
-    ///   order inside each run. Not yet resolved, deduplicated, or cut to a
-    ///   limit; `matches(forIDs:limit:)` does that.
-    /// - Throws: whatever a `.factory` source throws, or whatever a one-off
-    ///   session's `fork()` or `respond(to:generating:)` throws.
-    private func selectFromEveryRun(intent: String) async throws -> [String] {
-        var selectedIDs: [String] = []
-        for run in candidateRuns {
-            let prefix = Self.assemblePrefix(preamble: config.preamble, ids: run, catalog: catalog)
-            let session = try await oneOffSession(instructions: prefix)
-            let selection = try await session.respond(
-                to: prompt(prefix: prefix, intent: intent, ids: run),
-                generating: Selection.self
-            )
-            selectedIDs.append(contentsOf: selection.ids)
+    /// - Parameters:
+    ///   - preamble: the selection guidance every run's prefix starts with.
+    ///   - catalog: the catalog whose ids are split.
+    ///   - limit: the character budget.
+    /// - Returns: the runs, in catalog order.
+    private static func runs(preamble: String, catalog: any SelectionCatalog, limit: Int) -> [CandidateRun] {
+        let wholePrefix = assemblePrefix(preamble: preamble, catalog: catalog)
+        guard wholePrefix.count > limit else {
+            let ids = catalog.ids.filter { catalog.summaryBlock(forID: $0) != nil }
+            return [CandidateRun(ids: ids, prefix: wholePrefix)]
         }
-        return selectedIDs
-    }
-
-    /// Makes the session one over-budget prompt goes to.
-    ///
-    /// There is no stable prefix to cache over budget, since each run has
-    /// its own. A `.factory` source makes a fresh session seeded with
-    /// `instructions` and never forks it; a `.session` source forks the
-    /// supplied session, because a live session takes no new instructions.
-    ///
-    /// - Parameter instructions: the run's assembled prefix.
-    /// - Returns: the session to prompt for this run.
-    /// - Throws: whatever a `.factory` source throws, or whatever the
-    ///   supplied session's `fork()` throws.
-    private func oneOffSession(instructions: String) async throws -> any AgentSession {
-        switch config.sessionSource {
-        case .factory(let makeSession):
-            return try await makeSession(instructions)
-        case .session(let suppliedSession):
-            return try await suppliedSession.fork()
+        return candidateRuns(preamble: preamble, catalog: catalog, limit: limit).map { ids in
+            CandidateRun(ids: ids, prefix: assemblePrefix(preamble: preamble, ids: ids, catalog: catalog))
         }
     }
 
@@ -559,69 +389,4 @@ public actor SelectionTier {
         guard let summary = catalog.summaryBlock(forID: id) else { return nil }
         return "<candidate>\nid: \(id)\ndescription: \(summary)\n</candidate>"
     }
-
-    // MARK: - Guided-generation JSON Schema
-
-    /// Makes the JSON Schema source text that limits `Selection.ids` to
-    /// exactly `ids`. This is the
-    /// same derived schema as Multitool's own
-    /// `Librarian.grammarSchemaSource()`.
-    ///
-    /// The schema puts an `enum` constraint on the `items` subschema of the
-    /// `ids` array. The `enum` prevents the model from inventing an id that
-    /// is not in the current candidate set. The schema also sets `maxItems`
-    /// to `ids.count`. This cap prevents the model from giving more ids than
-    /// there are candidates. The cap is the backstop for `uniqueItems`, which
-    /// the xgrammar pipeline ignores.
-    ///
-    /// This function gives the schema text only. A caller whose model
-    /// backend accepts a JSON Schema grammar makes a grammar from the text
-    /// with that backend's own grammar type, for example
-    /// `Grammar.jsonSchema(SelectionTier.idEnumSchema(ids: ids))`.
-    ///
-    /// - Parameter ids: the candidate ids to limit the output to. Use the
-    ///   full catalog's ids under budget, or the ids of one prompt's run
-    ///   over budget.
-    /// - Returns: the JSON Schema source text.
-    /// - Throws: an encoding error if `Selection.generationSchema` cannot be
-    ///   encoded to JSON. This is not expected for a valid `@Generable` type.
-    ///   Throws `SelectionSchemaShapeError` if the encoded shape does not have
-    ///   the expected `properties.ids.items` subschema to constrain. This is
-    ///   not expected for `Selection`'s fixed shape.
-    public static func idEnumSchema(ids: [String]) throws -> String {
-        let data = try JSONEncoder().encode(Selection.generationSchema)
-        guard var root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-            var properties = root["properties"] as? [String: Any],
-            var idsSchema = properties["ids"] as? [String: Any],
-            var itemsSchema = idsSchema["items"] as? [String: Any]
-        else {
-            throw SelectionSchemaShapeError()
-        }
-
-        itemsSchema["enum"] = ids
-        idsSchema["items"] = itemsSchema
-        // No duplicate ids in one selection -- pairs with the per-element
-        // `enum` constraint above to make the *set* of ids structurally
-        // exact, not just each individual element's membership.
-        idsSchema["uniqueItems"] = true
-        // Hard length cap -- the xgrammar pipeline enforces
-        // `minItems`/`maxItems` but silently ignores `uniqueItems`, so
-        // without this bound the compiled grammar permits an
-        // unbounded-length array of repeated enum members (observed as a
-        // ~6150-token runaway on an off-topic intent). A selection can
-        // never legitimately contain more ids than there are candidates.
-        idsSchema["maxItems"] = ids.count
-        properties["ids"] = idsSchema
-        root["properties"] = properties
-
-        let constrained = try JSONSerialization.data(withJSONObject: root)
-        return String(decoding: constrained, as: UTF8.self)
-    }
 }
-
-/// Thrown by `SelectionTier.idEnumSchema(ids:)` if `Selection`'s encoded
-/// `GenerationSchema` doesn't have the expected `properties.ids.items`
-/// subschema shape to inject an `enum` constraint into — not expected for
-/// `Selection`'s fixed shape, kept as a genuine (if practically unreachable)
-/// failure mode rather than trapping.
-public struct SelectionSchemaShapeError: Error, Sendable, Equatable {}

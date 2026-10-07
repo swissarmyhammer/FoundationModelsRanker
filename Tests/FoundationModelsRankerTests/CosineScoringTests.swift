@@ -2,16 +2,13 @@ import Foundation
 import FoundationModelsRanker
 import Testing
 
-/// `CosineScoring` tests: the two cosine-scoring strategies CodeContextKit and
-/// FoundationModelsMetadataRegistry each carry today, side by side in one
-/// shared utility.
+/// `CosineScoring` tests: the two cosine-scoring strategies, side by side in
+/// one shared utility.
 ///
-/// `matvecScores` cases are ported from CodeContextKit's
-/// `SearchCorpusMatvecTests` (`Tests/CodeContextKitTests/SearchCodeTests.swift`)
-/// — the `vDSP_mmul`-backed matvec against a scalar dot-product reference,
-/// plus its documented degenerate-input behavior. `cosineSimilarity` cases
-/// encode FoundationModelsMetadataRegistry's `MetadataSearcher.cosineSimilarity`
-/// doc comment: `(a · b) / (|a| |b|)` in `[-1.0, 1.0]`, `0.0` for
+/// `matvecScores` cases compare the `vDSP_mmul`-backed matvec against a
+/// scalar dot-product reference, and check its documented degenerate-input
+/// behavior. `cosineSimilarity` cases check the documented contract:
+/// `(a · b) / (|a| |b|)` in `[-1.0, 1.0]`, `0.0` for
 /// mismatched lengths or either vector having zero magnitude.
 struct CosineScoringTests {
     // MARK: - matvecScores

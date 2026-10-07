@@ -1,14 +1,3 @@
-// Extracted from CodeContextKit's `Sources/CodeContextKit/Ops/SearchCode.swift`
-// (`SearchWeights`, `SearchCode.fuseRankings`, `computeBM25Ranking`,
-// `computeTrigramRanking`, `computeCosineRanking`, `rankingOfPositiveScores`)
-// and FoundationModelsMetadataRegistry's `Sources/
-// FoundationModelsMetadataRegistry/MetadataSearcher.swift` (`Weights`,
-// `retrievalSearch`, `rankEntireCatalog`, `computeSignals`,
-// `fuseAndNormalize`, `sortByNormalizedScore`, `buildMatches`) — the two
-// repos' structurally-duplicated fusion pipeline.
-// No behavior changes; field names follow FoundationModelsRanker's domain-neutral
-// convention.
-
 /// Per-signal fusion weights `HybridRanker` gives the BM25, trigram, and
 /// cosine rankings when fusing them via `RRF.fuse(rankedLists:weights:k:)`.
 ///
@@ -49,22 +38,18 @@ public struct SignalWeights: Sendable, Equatable {
 /// The shared hybrid-search fusion pipeline: BM25 + trigram + (optional)
 /// cosine rankings, fused via `RRF.fuse(rankedLists:weights:k:)` and
 /// normalized to `[0, 1]` via `RRF.normalize(fused:weights:k:)`.
-/// Encodes, once, the pipeline structurally duplicated between
-/// CodeContextKit's `SearchCode.run` and FoundationModelsMetadataRegistry's
-/// `MetadataSearcher.retrievalSearch`/`rankEntireCatalog`.
 ///
 /// `HybridRanker` never embeds anything itself: callers precompute each
 /// document's `RankedDocument` (BM25/trigram statistics) once and reuse it
 /// across queries, and — for the cosine signal — embed the query and score
 /// it against their own corpus representation (e.g. `CosineScoring`),
 /// passing the raw per-document results in as `cosineScores`. Every call
-/// re-tokenizes `query` and rescans `documents` for BM25/trigram, same as
-/// both source implementations; the per-query fusion itself is cheap
+/// re-tokenizes `query` and rescans `documents` for BM25/trigram; the
+/// per-query fusion itself is cheap
 /// relative to tokenizing/trigramming a whole corpus.
 public enum HybridRanker {
     /// Fuses `documents` against `query`, returning only documents at least
-    /// one signal ranked, best-first, capped at `limit` (CodeContextKit's
-    /// `SearchCode.fuseRankings` shape).
+    /// one signal ranked, best-first, capped at `limit`.
     ///
     /// - Parameters:
     ///   - ids: one id per document, positionally aligned with `documents`.
@@ -113,8 +98,7 @@ public enum HybridRanker {
     /// hits: documents any signal ranked come first, ordered exactly like
     /// `topMatches(ids:documents:query:cosineScores:weights:limit:)`; every
     /// other document follows in input order, scored `0.0` with all-absent
-    /// `Signals` (FoundationModelsMetadataRegistry's
-    /// `MetadataSearcher.rankEntireCatalog` shape) — the full, always-
+    /// `Signals` — the full, always-
     /// `documents.count`-long ordering an over-budget selection path needs,
     /// never fewer just because a query's signal overlap with the corpus
     /// happens to be sparse.

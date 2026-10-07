@@ -1,7 +1,3 @@
-// Ported from CodeContextKit's `Sources/CodeContextKit/Search/Hit.swift`.
-// Lineage: Rust `swissarmyhammer-search` crate's `lib.rs` ->
-// CodeContextKit -> FoundationModelsRanker. No behavior changes.
-
 /// The per-signal raw scores that contributed to a `Hit`.
 ///
 /// These are the *raw* per-doc signal values, before RRF fusion and the
@@ -10,8 +6,7 @@
 /// field has a **different range**, and none of the three is the same
 /// `[0,1]` scale as `Hit.score`. A raw-threshold consumer must pick the
 /// field it means and use that field's documented range; do not assume a
-/// common `[0,1]` scale across them. Ported from the Rust crate's
-/// `lib.rs`.
+/// common `[0,1]` scale across them.
 public struct Signals: Sendable, Equatable {
     /// BM25 lexical score. **Unbounded** non-negative (`>= 0.0`): a higher
     /// value means a stronger lexical match, but there is no fixed upper
@@ -47,8 +42,6 @@ public struct Signals: Sendable, Equatable {
 }
 
 /// A scored search result for a single document.
-///
-/// Ported from the Rust crate's `lib.rs`.
 public struct Hit: Sendable, Equatable {
     /// The id of the matched document.
     public let id: String

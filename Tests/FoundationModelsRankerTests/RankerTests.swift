@@ -2,14 +2,7 @@ import FoundationModelsRanker
 import Testing
 
 /// Golden-ordering and formula tests for the tokenizer, trigram-Dice, and
-/// RRF primitives, ported from CodeContextKit's `RankerTests.swift`
-/// (Tokenizer, Trigram Dice, RRF, and Hit/Signals sections only — the BM25
-/// sections are out of scope here and stay in CodeContextKit), which itself
-/// ports `crates/swissarmyhammer-search`'s `tokenize.rs`/`score.rs` test
-/// suites. Kept alongside `TrigramTests.swift`/
-/// `RRFTests.swift` (ported from FoundationModelsMetadataRegistry) even
-/// where cases overlap — each repo's suite encodes its own edge-case
-/// history.
+/// RRF primitives, and for `Hit`/`Signals`.
 struct RankerTests {
     // MARK: - Tokenizer
 
@@ -55,7 +48,7 @@ struct RankerTests {
 
     @Test
     func periodBetweenLettersGluesRunLikeUnicodeWordsMidNumLet() {
-        // Mirrors Rust's `unicode_words()`, which treats `.` as `MidNumLet`
+        // Follows Unicode word segmentation, which treats `.` as `MidNumLet`
         // and glues a letter-flanked period into one word rather than
         // breaking on it; `.` is not an identifier boundary, so the glued
         // run stays a single token.
@@ -169,12 +162,6 @@ struct RankerTests {
     }
 
     // MARK: - Hit / Signals
-
-    // Note: CodeContextKit's `fusedBm25AndTrigramSignalsRankSymbolPathMatchFirst`
-    // golden-ordering test is not ported here — it fuses BM25 with trigram,
-    // and BM25 is a separate, not-yet-ported primitive (kanban task
-    // "Port BM25 with neutral field-weight names"). It belongs with that
-    // port, not this one.
 
     @Test
     func signalsAndHitStoreConstructorArguments() {

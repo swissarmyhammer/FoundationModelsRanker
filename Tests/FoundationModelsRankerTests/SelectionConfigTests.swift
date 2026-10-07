@@ -2,73 +2,38 @@ import FoundationModelsRanker
 import Testing
 
 /// Tests for `SelectionConfig`'s defaults, budget clamping, and the
-/// `.selectionDefault` preamble's neutral wording —
-/// plus a scripted `AgentSession` fake proving the seam compiles end to end
-/// and its default `fork()` returns `self` unchanged.
+/// `.selectionDefault` preamble's neutral wording.
 struct SelectionConfigTests {
     // MARK: - Defaults
 
     @Test
     func defaultCapacityLimitMatchesTheNamedConstant() {
-        let config = SelectionConfig(model: { _ in ScriptedAgentSession() })
+        let config = SelectionConfig(model: ScriptedLanguageModel([]))
 
         #expect(config.capacityCharacterLimit == SelectionConfig.defaultCapacityCharacterLimit)
     }
 
     @Test
     func defaultPreambleIsSelectionDefault() {
-        let config = SelectionConfig(model: { _ in ScriptedAgentSession() })
+        let config = SelectionConfig(model: ScriptedLanguageModel([]))
 
         #expect(config.preamble == .selectionDefault)
     }
 
-    // MARK: - Clamping (existing behavior, ported verbatim)
+    // MARK: - Clamping
 
     @Test
     func negativeCapacityCharacterLimitClampsToZero() {
-        let config = SelectionConfig(model: { _ in ScriptedAgentSession() }, capacityCharacterLimit: -1)
+        let config = SelectionConfig(model: ScriptedLanguageModel([]), capacityCharacterLimit: -1)
 
         #expect(config.capacityCharacterLimit == 0)
     }
 
     @Test
     func positiveCapacityLimitPassesThroughUnclamped() {
-        let config = SelectionConfig(model: { _ in ScriptedAgentSession() }, capacityCharacterLimit: 1_234)
+        let config = SelectionConfig(model: ScriptedLanguageModel([]), capacityCharacterLimit: 1_234)
 
         #expect(config.capacityCharacterLimit == 1_234)
-    }
-
-    // MARK: - Session source
-
-    @Test
-    func theModelInitializerWrapsItsFactoryInTheFactorySource() async throws {
-        let config = SelectionConfig(model: { _ in ScriptedAgentSession() })
-
-        guard case .factory(let makeSession) = config.sessionSource else {
-            Issue.record("the model: initializer must store a `.factory` source")
-            return
-        }
-        #expect(try await makeSession("instructions") is ScriptedAgentSession)
-    }
-
-    @Test
-    func theSessionInitializerStoresTheSuppliedSession() {
-        let session = ScriptedAgentSession()
-
-        let config = SelectionConfig(session: session)
-
-        guard case .session(let storedSession) = config.sessionSource else {
-            Issue.record("the session: initializer must store a `.session` source")
-            return
-        }
-        #expect((storedSession as? ScriptedAgentSession) === session)
-    }
-
-    @Test
-    func theSessionInitializerClampsANegativeCapacityLimitToZero() {
-        let config = SelectionConfig(session: ScriptedAgentSession(), capacityCharacterLimit: -1)
-
-        #expect(config.capacityCharacterLimit == 0)
     }
 
     // MARK: - `.selectionDefault` neutral wording
@@ -98,52 +63,5 @@ struct SelectionConfigTests {
         #expect(!preamble.contains("function"))
         #expect(!preamble.contains("librarian"))
         #expect(!preamble.contains("api"))
-    }
-
-    // MARK: - `AgentSession` seam compiles + default `fork()`
-
-    @Test
-    func scriptedFakeRespondsWithItsCannedResponse() async throws {
-        let session = ScriptedAgentSession(response: "hello")
-
-        let response = try await session.respond(to: "prompt")
-
-        #expect(response == "hello")
-    }
-
-    @Test
-    func defaultForkReturnsSelfUnchanged() async throws {
-        let session = MinimalAgentSession(response: "hello")
-
-        let forked = try await session.fork()
-
-        #expect((forked as? MinimalAgentSession) === session)
-    }
-
-    // MARK: - `respond(to:generating:)` round-trip decode
-
-    @Test
-    func respondGeneratingDecodesScriptedJSONIntoASelection() async throws {
-        let session = ScriptedAgentSession(response: #"{"ids":["a","b"]}"#)
-
-        let selection = try await session.respond(to: "prompt", generating: Selection.self)
-
-        #expect(selection.ids == ["a", "b"])
-    }
-}
-
-/// A minimal scripted `AgentSession` fake that relies on the protocol's
-/// default `fork()` (returns `self`, unoverridden) rather than the shared
-/// `ScriptedAgentSession`'s call-counting override — proves that default
-/// holds for a conformer with no real KV cache to fork from.
-private final class MinimalAgentSession: AgentSession {
-    private let response: String
-
-    init(response: String = "") {
-        self.response = response
-    }
-
-    func respond(to prompt: String) async throws -> String {
-        response
     }
 }

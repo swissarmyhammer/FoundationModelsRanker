@@ -1,18 +1,10 @@
-// Extracted from CodeContextKit's `Sources/CodeContextKit/Search/SearchCorpus.swift`
-// (`SearchCorpus.preprocessRow`) and FoundationModelsMetadataRegistry's
-// `Sources/FoundationModelsMetadataRegistry/Catalog/MetadataIndex.swift` build
-// step — the two repos' structurally-duplicated per-document precompute.
-// Field names follow FoundationModelsRanker's domain-neutral
-// "primary"/"body" convention rather than either source's
-// corpus-specific naming (`symbolPath`/`text`, `id`/`block`). No behavior
-// changes.
-
 /// One document's precomputed BM25/trigram statistics, ready for the
 /// per-signal scorers to consume without re-tokenizing on every query.
 ///
 /// Built once per document (`init(primaryText:bodyText:)`) — tokenizing and
-/// trigramming is the expensive part of scoring, so both source
-/// implementations precompute it per document rather than per query. A
+/// trigramming is the expensive part of scoring, so this type does it
+/// once per document, not once per query. The field names use the neutral
+/// "primary"/"body" names, so they fit any kind of corpus. A
 /// consumer builds one `RankedDocument` per item in its corpus and reuses it
 /// across every `Searcher`/`HybridRanker` call.
 ///

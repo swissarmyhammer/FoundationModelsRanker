@@ -1,13 +1,9 @@
-// Ported from CodeContextKit's `Sources/CodeContextKit/Search/Tokenizer.swift`.
-// Lineage: Rust `swissarmyhammer-search` crate's `tokenize.rs` ->
-// CodeContextKit -> FoundationModelsRanker. No behavior changes.
-
 /// Code-aware tokenization: identifier splitting and character trigrams.
 ///
 /// Pure functions with no DB or embedding access, feeding the BM25 and
 /// trigram-Dice scoring stages. There is
 /// deliberately no stemming: fuzziness is carried by the character-trigram
-/// signal, not by stemming. Ported from the Rust crate's `tokenize.rs`.
+/// signal, not by stemming.
 public enum Tokenizer {
     /// Tokenize `text` into lowercased, code-aware terms.
     ///
@@ -15,8 +11,8 @@ public enum Tokenizer {
     /// (letters, digits, `_`, `-`), and any run with no letter or digit
     /// (bare punctuation, e.g. a lone `-`) is discarded. A `.` or `'` that
     /// sits between two letters/digits (`foo.bar`, `don't`) glues its run
-    /// together rather than splitting it, mirroring the `MidNumLet`
-    /// word-break class the Rust port's `unicode_words()` relies on — a
+    /// together rather than splitting it, as in the Unicode `MidNumLet`
+    /// word-break class — a
     /// `.`/`'` elsewhere (leading, trailing, or beside other punctuation)
     /// still ends the run. Each remaining run is then split on identifier
     /// boundaries: `_`/`-` delimiters, `camelCase`/`PascalCase` transitions
@@ -80,8 +76,8 @@ public enum Tokenizer {
     /// Whether `characters[at]` is a `.`/`'` flanked by a letter or digit on
     /// both sides, so it glues rather than breaks the surrounding run.
     ///
-    /// This mirrors the Unicode `MidNumLet` word-break class (`.` and `'`)
-    /// that Rust's `unicode_words()` uses: `foo.bar` and `don't` are single
+    /// This follows the Unicode `MidNumLet` word-break class (`.` and `'`):
+    /// `foo.bar` and `don't` are single
     /// words, but a leading/trailing `.`/`'`, or one next to other
     /// punctuation, still ends the run.
     private static func isGluedSeparator(character: Character, in characters: [Character], at index: Int) -> Bool {

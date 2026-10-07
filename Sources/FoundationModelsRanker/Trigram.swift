@@ -1,10 +1,5 @@
-// Ported from CodeContextKit's `Sources/CodeContextKit/Search/Trigram.swift`.
-// Lineage: Rust `swissarmyhammer-search` crate's `score.rs` ->
-// CodeContextKit -> FoundationModelsRanker. No behavior changes.
-
 /// Character-trigram Sørensen-Dice similarity — the typo/partial-identifier
-/// fuzzy-match signal. Ported from the Rust crate's
-/// `score.rs`.
+/// fuzzy-match signal.
 public enum Trigram {
     /// Sørensen-Dice coefficient over the *sets* of character trigrams of
     /// two strings.

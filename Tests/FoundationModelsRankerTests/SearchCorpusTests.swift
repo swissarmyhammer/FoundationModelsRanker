@@ -280,7 +280,7 @@ struct SearchCorpusTests {
         #expect(corpus.summaryBlock(forID: "tool") == "the short selection summary")
     }
 
-    // MARK: - Embedding storage (^rayd7bq: row-keyed, not a parallel positional array)
+    // MARK: - Embedding storage (row-keyed, not a parallel positional array)
 
     @Test
     func addReturnsExactlyTheAddedIDsExcludingDroppedDuplicates() {
@@ -372,9 +372,9 @@ struct SearchCorpusTests {
 
     @Test
     func anItemWithNoExplicitPrimaryTextWeightsItsIDAsThePrimaryField() {
-        // The pre-`primaryText` behavior, preserved by the `id` default: with
-        // no explicit primary field, the id is weighted `primaryFieldWeight`
-        // and the body text `bodyFieldWeight`.
+        // The `id` default for `primaryText`: with no explicit primary
+        // field, the id is weighted `primaryFieldWeight` and the body text
+        // `bodyFieldWeight`.
         let corpus = SearchCorpus(items: [SearchItem(id: "zephyr", text: "alpha beta")])
 
         #expect(corpus.documents.first?.weightedTermFrequency["zephyr"] == BM25.primaryFieldWeight)
@@ -383,7 +383,7 @@ struct SearchCorpusTests {
 
     @Test
     func anItemsPrimaryTextIsWeightedAsThePrimaryFieldOutrankingABodyOnlyMatch() {
-        // The seam this whole change exists for: a consumer keying retrieval
+        // The main use of `primaryText`: a consumer keying retrieval
         // on a salient field distinct from its id (a symbol path) -- neither
         // item's *id* contains the query term, so this only ranks correctly
         // if `add` routes `primaryText`, not `id`, into the primary field.

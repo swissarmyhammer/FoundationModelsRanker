@@ -1,12 +1,12 @@
 import Foundation
-import FoundationModelsRanker
+import FoundationModelsExtras
 
-/// A `TextEmbedding` test double whose `embed(_:)` returns one vector
+/// A `PooledEmbedding` test double whose `embed(texts:)` returns one vector
 /// short for any multi-text (batched) call, but embeds a single text
 /// correctly.
 ///
 /// Exists to exercise `StreamingSearchCorpus.add(items:)`'s
-/// mismatched-vector-count error path (^rayd7bq): `add(items:)` embeds
+/// mismatched-vector-count error path: `add(items:)` embeds
 /// its newly-added items in one batched call (more than one text
 /// whenever more than one item is added at once), so failing only
 /// multi-text calls reproduces "add's embed call returns the wrong
@@ -21,7 +21,7 @@ import FoundationModelsRanker
 /// so that regression's result is attributable to `add(items:)`'s error
 /// path alone, and the single-text passthrough here is a correctness
 /// property of this double (not exercised by that particular test).
-final class MismatchedCountEmbedder: TextEmbedding, Sendable {
+final class MismatchedCountEmbedder: PooledEmbedding, Sendable {
     private let fake: FakeEmbedder
 
     /// Creates a mismatched-count embedder that deterministically hashes
@@ -38,8 +38,8 @@ final class MismatchedCountEmbedder: TextEmbedding, Sendable {
     /// a single-text call; for any call embedding more than one text,
     /// drops the last vector so the result's count no longer matches
     /// `texts.count`.
-    func embed(_ texts: [String]) async throws -> [[Float]] {
-        let vectors = try await fake.embed(texts)
+    func embed(texts: [String]) async throws -> [[Float]] {
+        let vectors = try await fake.embed(texts: texts)
         return texts.count > 1 ? Array(vectors.dropLast()) : vectors
     }
 }

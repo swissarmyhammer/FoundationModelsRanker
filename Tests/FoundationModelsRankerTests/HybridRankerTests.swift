@@ -1,14 +1,12 @@
 import FoundationModelsRanker
 import Testing
 
-/// `SignalWeights` + `HybridRanker` fusion-pipeline tests, ported/adapted
-/// from FoundationModelsMetadataRegistry's
-/// `RetrievalSearchTests.swift` (golden primary-field-weighted ranking,
-/// limit handling, empty-query/no-hits, weights configuration, first-seen
-/// tie-break) and CodeContextKit's `SearchCodeTests.swift` fusion coverage
-/// (keyword-only vs. semantic-only golden hits, fused-ordering primary-field
-/// dominance) — adapted from each repo's corpus/storage-specific fixtures to
-/// plain `RankedDocument` arrays, since `HybridRanker` is corpus-agnostic.
+/// `SignalWeights` + `HybridRanker` fusion-pipeline tests: golden
+/// primary-field-weighted ranking, limit handling, empty-query/no-hits,
+/// weights configuration, first-seen tie-break, keyword-only vs.
+/// semantic-only golden hits, and fused-ordering primary-field dominance.
+/// The fixtures are plain `RankedDocument` arrays, because `HybridRanker` is
+/// corpus-agnostic.
 struct HybridRankerTests {
     // MARK: - Fixtures
 
@@ -18,8 +16,7 @@ struct HybridRankerTests {
         let body: String
     }
 
-    /// A small ops-command catalog mirroring FoundationModelsMetadataRegistry's
-    /// `RetrievalSearchTests.catalog`: none of the blocks repeat their own id
+    /// A small ops-command catalog: none of the blocks repeat their own id
     /// verbatim, so an id-only match (e.g. "deploy") can only be found
     /// through `BM25.primaryFieldWeight`, never by coincidence with the body
     /// text.
@@ -246,7 +243,7 @@ struct HybridRankerTests {
         }
     }
 
-    // MARK: - Fused-ordering primary-field dominance (ported from CodeContextKit)
+    // MARK: - Fused-ordering primary-field dominance
 
     @Test
     func primaryFieldMatchOutranksBodyOnlyMatchInFusedOrdering() {
@@ -278,7 +275,7 @@ struct HybridRankerTests {
         #expect(hits[strongIndex].score > hits[mediocreIndex].score)
     }
 
-    // MARK: - Cosine signal (ported from CodeContextKit)
+    // MARK: - Cosine signal
 
     @Test
     func cosineOnlyDocumentIsFoundDespiteNoLexicalOrFuzzyOverlap() {
@@ -317,10 +314,7 @@ struct HybridRankerTests {
 
     @Test
     func zeroWeightedCosineStillReportsRawSignalButIsExcludedFromFusion() {
-        // Unlike FMR's `MetadataSearcher.computeSignals`, which skips
-        // computing cosine entirely when its weight is <= 0 (an optimization
-        // that avoids embedding the query, which doesn't apply here since
-        // `cosineScores` is already precomputed by the caller), HybridRanker
+        // The caller supplies `cosineScores` precomputed, so HybridRanker
         // always reports the raw cosine score for explainability -- exactly
         // like trigram's zero-weight behavior above -- and only excludes it
         // from the fused ranking and normalization ceiling.
