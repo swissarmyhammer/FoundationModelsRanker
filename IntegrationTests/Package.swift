@@ -33,8 +33,10 @@ let extrasName = "FoundationModelsExtras"
 ///
 /// The one test target holds the tests that drive a live model: the
 /// `SystemLanguageModel`, so a run needs a Mac with Apple Intelligence turned
-/// on, and `mlx-community/Qwen3-4B-4bit` through MLX, so the first run
-/// downloads its weights into the Hugging Face cache. Selection is
+/// on, `mlx-community/Qwen3-4B-4bit` through MLX, so the first run downloads
+/// its weights into the Hugging Face cache, and
+/// `erjigit17/embeddinggemma-300m-ane-coreml` through Core ML on the Apple
+/// Neural Engine, so the first run downloads and compiles the package. Selection is
 /// structural: this target exists only in this package, so a root
 /// `swift test` cannot see it.
 let package = Package(
