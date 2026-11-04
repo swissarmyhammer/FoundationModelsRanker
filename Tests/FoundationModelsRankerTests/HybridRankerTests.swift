@@ -399,4 +399,66 @@ struct HybridRankerTests {
         #expect(hits.map(\.id) == ids)
         #expect(hits.allSatisfy { $0.score == 0.0 })
     }
+
+    // MARK: - Cosine ranking of zero and negative scores
+
+    /// Digit-only documents share no token or trigram with a letter query,
+    /// so only the cosine signal can rank them.
+    private static func cosineOnly(count: Int) -> (ids: [String], documents: [RankedDocument]) {
+        let ids = (0..<count).map { "doc\($0)" }
+        let documents = (0..<count).map { _ in RankedDocument(primaryText: "111222", bodyText: "333444") }
+        return (ids, documents)
+    }
+
+    @Test
+    func cosineRanksZeroAndNegativeScoresBelowPositiveAndSkipsNil() {
+        let (ids, documents) = Self.cosineOnly(count: 4)
+        let hits = HybridRanker.topMatches(
+            ids: ids, documents: documents, query: "retry", cosineScores: [-0.2, nil, 0.0, 0.5], limit: 10
+        )
+
+        #expect(hits.map(\.id) == ["doc3", "doc2", "doc0"])
+        #expect(hits.map(\.signals.cosine) == [0.5, 0.0, -0.2])
+    }
+
+    @Test
+    func allNegativeCosineScoresStillGiveACosineRanking() {
+        let (ids, documents) = Self.cosineOnly(count: 3)
+        let hits = HybridRanker.topMatches(
+            ids: ids, documents: documents, query: "retry", cosineScores: [-0.9, -0.1, -0.5], limit: 10
+        )
+
+        #expect(hits.map(\.id) == ["doc1", "doc2", "doc0"])
+    }
+
+    @Test
+    func allNilCosineScoresRankNothing() {
+        let (ids, documents) = Self.cosineOnly(count: 2)
+        let hits = HybridRanker.topMatches(
+            ids: ids, documents: documents, query: "retry", cosineScores: [nil, nil], limit: 10
+        )
+
+        #expect(hits.isEmpty)
+    }
+
+    @Test
+    func equalCosineScoresBreakTiesByAscendingIndex() {
+        let (ids, documents) = Self.cosineOnly(count: 5)
+        let hits = HybridRanker.topMatches(
+            ids: ids, documents: documents, query: "retry", cosineScores: [0.3, 0.3, 0.3, 0.3, 0.3], limit: 10
+        )
+
+        #expect(hits.map(\.id) == ids)
+    }
+
+    @Test
+    func fullOrderingPutsANilCosineDocumentAfterRankedOnes() {
+        let (ids, documents) = Self.cosineOnly(count: 3)
+        let hits = HybridRanker.fullOrdering(
+            ids: ids, documents: documents, query: "retry", cosineScores: [nil, -0.4, 0.1]
+        )
+
+        #expect(hits.map(\.id) == ["doc2", "doc1", "doc0"])
+        #expect(hits.last?.score == 0.0)
+    }
 }

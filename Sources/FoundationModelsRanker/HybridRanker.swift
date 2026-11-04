@@ -60,7 +60,10 @@ public enum HybridRanker {
     ///   - cosineScores: one raw cosine-similarity score per document,
     ///     positionally aligned with `documents`, or `nil` (the default) to
     ///     skip the cosine signal entirely — graceful degradation to
-    ///     keyword-only ranking.
+    ///     keyword-only ranking. An element is `nil` when that document has
+    ///     no embedding: it gets no cosine rank. Every non-`nil` element
+    ///     gets a cosine rank, also a zero or negative score, because for
+    ///     cosine those are real similarity values, not "no match".
     ///   - weights: the per-signal fusion weights. Defaults to `1.0` for
     ///     every signal.
     ///   - limit: the maximum number of hits to return. `limit <= 0` yields
@@ -77,7 +80,7 @@ public enum HybridRanker {
         ids: [String],
         documents: [RankedDocument],
         query: String,
-        cosineScores: [Double]? = nil,
+        cosineScores: [Double?]? = nil,
         weights: SignalWeights = SignalWeights(),
         limit: Int
     ) -> [Hit] {
@@ -122,7 +125,7 @@ public enum HybridRanker {
         ids: [String],
         documents: [RankedDocument],
         query: String,
-        cosineScores: [Double]? = nil,
+        cosineScores: [Double?]? = nil,
         weights: SignalWeights = SignalWeights()
     ) -> [Hit] {
         validateInputs(ids: ids, documents: documents, cosineScores: cosineScores)
@@ -152,7 +155,7 @@ public enum HybridRanker {
     ///   - cosineScores: one raw cosine-similarity score per document, or
     ///     `nil` to skip the cosine signal; checked against `documents`'
     ///     length when non-`nil`.
-    private static func validateInputs(ids: [String], documents: [RankedDocument], cosineScores: [Double]?) {
+    private static func validateInputs(ids: [String], documents: [RankedDocument], cosineScores: [Double?]?) {
         precondition(ids.count == documents.count, "HybridRanker: ids and documents must be the same length")
         precondition(
             cosineScores == nil || cosineScores?.count == documents.count,
@@ -183,7 +186,7 @@ public enum HybridRanker {
     private static func computeAndSortSignals(
         documents: [RankedDocument],
         query: String,
-        cosineScores: [Double]?,
+        cosineScores: [Double?]?,
         weights: SignalWeights
     ) -> (signals: RetrievalSignals, normalized: [Int: Double], sortedIndices: [Int]) {
         let signals = computeSignals(documents: documents, query: query, cosineScores: cosineScores)
@@ -216,7 +219,7 @@ public enum HybridRanker {
     private static func computeSignals(
         documents: [RankedDocument],
         query: String,
-        cosineScores: [Double]?
+        cosineScores: [Double?]?
     ) -> RetrievalSignals {
         let (bm25Ranking, bm25Scores) = computeBM25Ranking(documents: documents, query: query)
         let (trigramRanking, trigramScores) = computeTrigramRanking(documents: documents, query: query)
@@ -280,18 +283,22 @@ public enum HybridRanker {
     ///
     /// - Returns: an empty ranking and a full-length, all-zero `scores` array
     ///   when `cosineScores` is `nil` — the "no cosine signal available"
-    ///   degradation, matching `Signals.cosine`'s documented `0.0` for "the
-    ///   doc lacks an embedding". Otherwise, the positively-scored document
-    ///   indices ranked descending (see `rankingOfPositiveScores(scores:)`)
-    ///   alongside `cosineScores` verbatim.
+    ///   degradation. Otherwise, the indices of every non-`nil` score ranked
+    ///   descending (zero and negative scores included; ties go to the lower
+    ///   index), and the scores with `0.0` in place of each `nil` — matching
+    ///   `Signals.cosine`'s documented `0.0` for "the doc lacks an
+    ///   embedding".
     private static func computeCosineRanking(
         documents: [RankedDocument],
-        cosineScores: [Double]?
+        cosineScores: [Double?]?
     ) -> (ranking: [Int], scores: [Double]) {
         guard let cosineScores else {
             return ([], zeroScores(count: documents.count))
         }
-        return (rankingOfPositiveScores(scores: cosineScores), cosineScores)
+        let ranking = cosineScores.indices
+            .filter { cosineScores[$0] != nil }
+            .sorted { descendingScoreThenIndex(cosineScores[$0] ?? 0.0, $0, cosineScores[$1] ?? 0.0, $1) }
+        return (ranking, cosineScores.map { $0 ?? 0.0 })
     }
 
     /// The indices of every positive score, descending by score — the
@@ -300,7 +307,13 @@ public enum HybridRanker {
     /// `0.0` (no match at all for this signal) is simply absent from the
     /// list, exactly as if it weren't in the corpus for this signal.
     private static func rankingOfPositiveScores(scores: [Double]) -> [Int] {
-        scores.indices.filter { scores[$0] > 0.0 }.sorted { scores[$0] > scores[$1] }
+        scores.indices.filter { scores[$0] > 0.0 }.sorted { descendingScoreThenIndex(scores[$0], $0, scores[$1], $1) }
+    }
+
+    /// The order of a per-signal ranking: higher score first, and the lower
+    /// index first when two scores are equal.
+    private static func descendingScoreThenIndex(_ left: Double, _ leftIndex: Int, _ right: Double, _ rightIndex: Int) -> Bool {
+        left != right ? left > right : leftIndex < rightIndex
     }
 
     /// A `count`-long array of `0.0` scores — the "signal couldn't be
